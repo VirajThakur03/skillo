@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card glass">
+    <h2>Video Verification</h2>
+    <p class="muted">
+      Record a 5-second selfie saying: <br>
+      <b>"Hi, my name is &lt;your name&gt; and I confirm my identity."</b>
+    </p>
+    <video id="preview" autoplay playsinline style="width:100%; border-radius:12px; background:#000;"></video>
+    <div style="margin-top:10px;">
+      <button class="btn neon" id="startBtn">Start Recording</button>
+    </div>
+    <p id="status" class="muted"></p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let mediaRecorder;
+  let chunks = [];
+  const preview = document.getElementById('preview');
+  const statusEl = document.getElementById('status');
+
+  async function initCamera(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
+      preview.srcObject = stream;
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+      mediaRecorder.onstop = uploadVideo;
+    }catch(e){
+      alert('Unable to access camera/mic: ' + e.message);
+    }
+  }
+
+  async function startRecording(){
+    if(!mediaRecorder){
+      await initCamera();
+    }
+    chunks = [];
+    mediaRecorder.start();
+    statusEl.innerText = "Recording… 5 seconds";
+    setTimeout(()=> {
+      mediaRecorder.stop();
+      statusEl.innerText = "Recording stopped. Uploading…";
+    }, 5000);
+  }
+
+  async function uploadVideo(){
+    const blob = new Blob(chunks, {type:'video/webm'});
+    const form = new FormData();
+    form.append('file', blob, 'verification.webm');
+    const token = localStorage.getItem('sklio_access_token');
+    if(!token){ alert('Please login as provider first'); return; }
+
+    const res = await fetch('/api/auth/upload_verification_video', {
+      method:'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: form
+    });
+    const data = await res.json();
+    statusEl.innerText = JSON.stringify(data);
+    if(res.status === 201){
+      alert('Video uploaded, pending verification.');
+    }
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startRecording);
+  initCamera();
+</script>
+{% endblock %}

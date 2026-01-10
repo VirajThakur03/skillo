@@ -1,0 +1,450 @@
+/* app/static/css/style.css */
+
+/* ---------- CSS VARIABLES ---------- */
+:root{
+  --brand-primary: #2EC4B6;
+  --brand-secondary: #1E6FF5;
+  --brand-accent: #FFC845;
+  --bg: #F7FAFC;
+  --text: #0F1724;
+  --muted: #64748B;
+  --card: #ffffff;
+
+  /* Extras for neon / glass */
+  --glass-bg: rgba(15, 23, 36, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 0 30px rgba(0, 234, 255, 0.35);
+  --neon: #00eaff;
+}
+
+*{
+  box-sizing: border-box;
+}
+
+body{
+  margin:0;
+  font-family:Poppins, Arial, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+/* Utility */
+.muted{
+  color:var(--muted);
+}
+
+/* ---------- LAYOUT ---------- */
+.container{
+  max-width:980px;
+  margin:20px auto;
+  padding:16px;
+}
+
+/* ---------- HEADER ---------- */
+.site-header{
+  background:#fff;
+  border-bottom:1px solid #eef2f7;
+  position:sticky;
+  top:0;
+  z-index:20;
+  backdrop-filter: blur(12px);
+}
+
+.site-header .container{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:12px 16px;
+}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  text-decoration:none;
+  color:var(--text);
+}
+
+.logo-box{
+  width:36px;
+  height:36px;
+  background:linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+  border-radius:8px;
+  display:inline-block;
+  box-shadow:0 6px 18px rgba(46,196,182,0.4);
+}
+
+.brand-text{
+  font-weight:600;
+  font-size:18px;
+}
+
+.nav a{
+  margin-left:12px;
+  text-decoration:none;
+  color:var(--muted);
+  font-size:14px;
+  padding:4px 8px;
+  border-radius:6px;
+  transition:background 0.2s ease, color 0.2s ease;
+}
+
+.nav a.active{
+  background:rgba(30,111,245,0.08);
+  color:var(--brand-secondary);
+}
+
+
+.nav a:hover{
+  background:rgba(30,111,245,0.06);
+  color:var(--brand-secondary);
+}
+
+/* ---------- HERO ---------- */
+.hero{
+  padding:36px 0;
+  text-align:center;
+}
+
+.hero-inner{
+  background:#fff;
+  padding:36px;
+  border-radius:12px;
+  box-shadow:0 6px 18px rgba(15,23,36,0.06);
+  display:inline-block;
+  max-width:720px;
+}
+
+/* ---------- BUTTONS ---------- */
+.btn{
+  display:inline-block;
+  padding:10px 14px;
+  border-radius:8px;
+  text-decoration:none;
+  cursor:pointer;
+  border:none;
+  font-size:14px;
+  font-weight:500;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.btn.primary{
+  background:linear-gradient(135deg, var(--brand-secondary), #4c8dff);
+  color:#fff;
+  box-shadow:0 8px 18px rgba(30,111,245,0.3);
+}
+
+.btn.primary:hover{
+  transform:translateY(-1px);
+  box-shadow:0 10px 22px rgba(30,111,245,0.45);
+}
+
+.btn.ghost{
+  background:transparent;
+  color:var(--brand-secondary);
+  border:1px solid rgba(30,111,245,0.12);
+}
+
+.btn.ghost:hover{
+  background:rgba(30,111,245,0.04);
+}
+
+/* Neon buttons */
+.btn.neon{
+  background: transparent;
+  color: var(--neon);
+  border: 1px solid rgba(0,234,255,0.8);
+  box-shadow:
+    0 0 10px rgba(0,234,255,0.7),
+    0 0 20px rgba(0,234,255,0.35);
+  text-shadow: 0 0 6px rgba(0,234,255,0.8);
+}
+
+.btn.neon:hover{
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 14px rgba(0,234,255,1),
+    0 0 26px rgba(0,234,255,0.7);
+}
+
+/* ---------- CARDS ---------- */
+.card{
+  background:var(--card);
+  padding:20px;
+  border-radius:12px;
+  box-shadow:0 6px 18px rgba(15,23,36,0.04);
+  margin-bottom:18px;
+  transition:transform 0.15s ease, box-shadow 0.15s ease, border 0.15s ease;
+  border:1px solid rgba(226,232,240,0.7);
+}
+
+.card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 10px 26px rgba(15,23,36,0.08);
+}
+
+/* Glassmorphism cards */
+.card.glass,
+.glass{
+  background: var(--glass-bg);
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(14px);
+  color: #e2e8f0;
+}
+
+/* Optional glass header section */
+.section-glass{
+  padding:40px 0;
+  background: radial-gradient(circle at top, #1e293b 0, #020617 55%, #000 100%);
+  color:#e2e8f0;
+}
+
+/* ---------- SEARCH + LIST ---------- */
+.search-row{
+  display:flex;
+  gap:8px;
+  margin-bottom:18px;
+}
+
+.search-row input{
+  flex:1;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid #e6edf3;
+  font-size:14px;
+}
+
+/* cards grid (skills / services list) */
+.cards{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:12px;
+}
+
+/* On larger screens, 2–3 columns */
+@media (min-width: 768px){
+  .cards{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px){
+  .cards{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------- SKILL CARD ---------- */
+.skill-card{
+  background:#fff;
+  padding:12px;
+  border-radius:10px;
+  display:flex;
+  gap:12px;
+  align-items:center;
+  border:1px solid #eef2f7;
+  transition:transform 0.15s ease, box-shadow 0.15s ease, border 0.15s ease;
+}
+
+.skill-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 10px 24px rgba(15,23,42,0.06);
+  border-color:rgba(46,196,182,0.5);
+}
+
+.skill-card .avatar{
+  width:48px;
+  height:48px;
+  background:#e6f7f2;
+  border-radius:10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+  color:var(--brand-primary);
+}
+
+.skill-card-body h3{
+  margin:0;
+  font-size:16px;
+}
+
+.skill-card-body .muted{
+  color:var(--muted);
+  font-size:13px;
+}
+
+.skill-card-actions{
+  margin-left:auto;
+  display:flex;
+  gap:6px;
+  align-items:center;
+}
+
+/* ---------- PROFILE ---------- */
+.profile{
+  display:flex;
+  gap:24px;
+}
+
+.profile-left{
+  width:220px;
+  text-align:center;
+}
+
+.avatar.big{
+  width:96px;
+  height:96px;
+  border-radius:16px;
+  background:#e6f7f2;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:36px;
+  color:var(--brand-primary);
+  margin-bottom:12px;
+}
+
+.actions{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+}
+
+/* ---------- CHAT ---------- */
+.chat-card .messages{
+  height:360px;
+  overflow:auto;
+  border:1px solid #eef2f7;
+  padding:8px;
+  border-radius:8px;
+  margin-bottom:8px;
+  background:#fff;
+}
+
+.message{
+  padding:6px 8px;
+  background:#f1f5f9;
+  border-radius:8px;
+  margin-bottom:6px;
+  width:fit-content;
+  max-width:80%;
+  font-size:14px;
+}
+
+/* you can add modifiers like .message.me later */
+.message.me{
+  margin-left:auto;
+  background:rgba(30,111,245,0.1);
+}
+
+.chat-composer{
+  display:flex;
+  gap:8px;
+}
+
+.chat-composer input{
+  flex:1;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid #e6edf3;
+}
+
+/* ---------- WALLET ---------- */
+.wallet-balance h3{
+  margin:0;
+}
+
+/* ---------- FOOTER ---------- */
+.site-footer{
+  padding:18px 0;
+  text-align:center;
+  color:var(--muted);
+  font-size:14px;
+}
+
+/* ---------- FLIP CARDS (service categories) ---------- */
+.flip-card{
+  background: transparent;
+  width: 200px;
+  height: 140px;
+  perspective: 1000px;
+  margin: 8px auto;
+}
+
+.flip-card-inner{
+  position: relative;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  transition: transform 0.5s;
+  transform-style: preserve-3d;
+}
+
+.flip-card:hover .flip-card-inner{
+  transform: rotateY(180deg);
+}
+
+.flip-card-front,
+.flip-card-back{
+  position:absolute;
+  width:100%;
+  height:100%;
+  backface-visibility:hidden;
+  border-radius:16px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:12px;
+  font-size:14px;
+}
+
+.flip-card-front{
+  background: linear-gradient(135deg, #020617, #0f172a);
+  color:white;
+  box-shadow:0 10px 24px rgba(15,23,42,0.35);
+}
+
+.flip-card-back{
+  background: rgba(15,23,36,0.95);
+  color:#e2e8f0;
+  transform: rotateY(180deg);
+}
+
+/* Small label / pill inside flip card */
+.flip-pill{
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:999px;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.05em;
+  border:1px solid rgba(148,163,184,0.7);
+  margin-top:6px;
+}
+
+/* ---------- RESPONSIVE TWEAKS ---------- */
+@media (max-width: 640px){
+  .hero-inner{
+    padding:24px 16px;
+  }
+
+  .profile{
+    flex-direction:column;
+  }
+
+  .profile-left{
+    width:100%;
+  }
+
+  .site-header .container{
+    flex-direction:row;
+  }
+}

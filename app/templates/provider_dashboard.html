@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card glass">
+  <h2>Provider Dashboard</h2>
+  <p class="muted" id="providerMeta"></p>
+
+  <hr>
+
+  <h3>🟡 Pending Jobs</h3>
+  <div id="pendingJobs"></div>
+
+  <h3 style="margin-top:20px;">🟢 Active Jobs</h3>
+  <div id="activeJobs"></div>
+
+  <h3 style="margin-top:20px;">✅ Completed Jobs</h3>
+  <div id="completedJobs"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+async function loadDashboard(){
+  const res = await authFetch("/api/provider/dashboard");
+  if(!res.ok){
+    alert("Not authorized");
+    return;
+  }
+
+  const { provider, bookings } = res.data;
+
+  document.getElementById("providerMeta").innerHTML = `
+    ⭐ ${provider.rating || 0} rating •
+    ${provider.completed_jobs || 0} jobs •
+    ₹${provider.wallet_balance} wallet
+    ${provider.is_verified ? " • ✅ Verified" : ""}
+  `;
+
+  renderJobs("pendingJobs", bookings.pending, true);
+  renderJobs("activeJobs", bookings.active, false);
+  renderJobs("completedJobs", bookings.completed, false);
+}
+
+function renderJobs(containerId, jobs, canStart){
+  const el = document.getElementById(containerId);
+  if(jobs.length === 0){
+    el.innerHTML = "<p class='muted'>No jobs</p>";
+    return;
+  }
+
+  el.innerHTML = jobs.map(j => `
+    <div class="card glass" style="margin-bottom:10px;">
+      <b>${j.skill}</b><br>
+      Seeker: ${j.seeker}<br>
+      Scheduled: ${new Date(j.scheduled_at).toLocaleString()}<br>
+      Price: ₹${j.price}<br>
+      Status: ${j.status}
+
+      <div style="margin-top:8px;">
+        ${
+          j.status === "pending"
+            ? `<button class="btn primary" onclick="startJob(${j.id})">Start Job</button>`
+            : ""
+        }
+        ${
+          j.status === "confirmed"
+            ? `
+              <a class="btn neon" href="/worker_track/${j.id}">Share Live Location</a>
+              <button class="btn ghost" onclick="completeJob(${j.id})">Complete</button>
+            `
+            : ""
+        }
+      </div>
+    </div>
+  `).join("");
+}
+
+async function startJob(id){
+  alert("Job accepted automatically on payment in your system");
+}
+
+async function completeJob(id){
+  const res = await authFetch(`/api/bookings/${id}/complete`, { method: "POST" });
+  if(res.ok){
+    alert("Job completed");
+    loadDashboard();
+  }
+}
+
+loadDashboard();
+</script>
+{% endblock %}

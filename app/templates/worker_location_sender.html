@@ -1,0 +1,232 @@
+<!-- app/templates/worker_location_sender.html -->
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="card glass">
+    <h2>Worker Live Location</h2>
+    <p class="muted">
+      This page shares your live GPS for booking #{{ booking_id }}
+      {% if booking and booking.skill %}
+        ({{ booking.skill.title }})
+      {% endif %}
+    </p>
+
+    <div id="status-badge" class="muted" style="margin-top:8px; font-size:13px;">
+      Status: <strong>Not connected</strong>
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="track-btn" class="btn neon" onclick="toggleTracking()">
+        Start tracking
+      </button>
+      <button class="btn ghost" onclick="sendOnce()">
+        Send once
+      </button>
+    </div>
+
+    <div id="meta" class="muted" style="margin-top:12px; font-size:13px;">
+      Accuracy: <span id="accuracy">–</span> • Last sent: <span id="last-sent">never</span>
+    </div>
+
+    <p id="log" class="muted" style="margin-top:12px;"></p>
+
+    <!-- Mini map preview -->
+    <div id="map" style="margin-top:16px; height:260px; border-radius:12px; overflow:hidden;"></div>
+
+    <p class="muted" style="margin-top:12px; font-size:12px;">
+      Tip: Keep this page open while you’re on the way. We’ll update the seeker in real time.
+    </p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <!-- Leaflet map (simple, lightweight) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obBOWSe6A="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script>
+    const BOOKING_ID = {{ booking_id | tojson }};
+    const ROOM = "booking_" + BOOKING_ID;
+    const token = localStorage.getItem('sklio_access_token') || null;
+
+    let socket = null;
+    let watchId = null;
+    let map, marker;
+    let isTracking = false;
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function log(msg){
+      const el = $("log");
+      if (el) el.innerText = msg;
+    }
+
+    function setStatus(text, type){
+      const el = $("status-badge");
+      if (!el) return;
+      let color = "#64748b"; // muted
+      if (type === "ok") color = "#16a34a";
+      if (type === "warn") color = "#d97706";
+      if (type === "error") color = "#dc2626";
+      el.innerHTML = 'Status: <strong>' + text + "</strong>";
+      el.style.color = color;
+    }
+
+    function updateMeta(acc, ts){
+      const accEl = $("accuracy");
+      const tsEl = $("last-sent");
+      if (accEl) accEl.innerText = acc ? acc + " m" : "–";
+      if (tsEl) tsEl.innerText = ts || "never";
+    }
+
+    function initMap(){
+      if (map) return;
+      // Center on India by default
+      map = L.map('map').setView([20.5937, 78.9629], 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+    }
+
+    function updateMapMarker(lat, lon){
+      initMap();
+      if (!marker){
+        marker = L.marker([lat, lon]).addTo(map);
+      } else {
+        marker.setLatLng([lat, lon]);
+      }
+      map.setView([lat, lon], 15);
+    }
+
+    function initSocket(){
+      if (!token){
+        setStatus("No access token — please login first.", "error");
+        log("Tip: open Demo Login, login as worker, then come back.");
+        return;
+      }
+
+      socket = io({ auth: { token } });
+
+      socket.on('connect', () => {
+        socket.emit('join', { room: ROOM });
+        setStatus("Connected. Ready to send location.", "ok");
+        log("Connected to Sklio. You can start tracking.");
+      });
+
+      socket.on('disconnect', () => {
+        setStatus("Disconnected. Check network.", "warn");
+      });
+    }
+
+    function sendLocation(lat, lon, accuracy){
+      if (!socket || !socket.connected){
+        setStatus("Not connected to server.", "error");
+        log("Socket not connected.");
+        return;
+      }
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString();
+      socket.emit('worker_location', {
+        booking_id: BOOKING_ID,
+        latitude: lat,
+        longitude: lon,
+        token
+      });
+      log(`Sent: ${lat.toFixed(5)}, ${lon.toFixed(5)} at ${timeStr}`);
+      updateMeta(accuracy ? accuracy.toFixed(0) : null, timeStr);
+      updateMapMarker(lat, lon);
+    }
+
+    function startTrackingInternal(){
+      if (!navigator.geolocation){
+        alert('Geolocation not supported on this device.');
+        return;
+      }
+      if (watchId !== null) return; // already tracking
+
+      setStatus("Tracking in progress…", "ok");
+
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const acc = pos.coords.accuracy || null;
+        sendLocation(lat, lon, acc);
+      }, err => {
+        console.error(err);
+        setStatus("Error getting location.", "error");
+        alert('Error getting location: ' + err.message);
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 10000
+      });
+    }
+
+    function stopTrackingInternal(){
+      if (watchId !== null){
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      setStatus("Tracking paused.", "warn");
+      log("Tracking stopped. You can start again anytime.");
+    }
+
+    function toggleTracking(){
+      const btn = $("track-btn");
+      if (!btn) return;
+
+      if (!isTracking){
+        // Start
+        isTracking = true;
+        btn.textContent = "Stop tracking";
+        btn.classList.remove("neon");
+        btn.classList.add("primary");
+        startTrackingInternal();
+      } else {
+        // Stop
+        isTracking = false;
+        btn.textContent = "Start tracking";
+        btn.classList.remove("primary");
+        btn.classList.add("neon");
+        stopTrackingInternal();
+      }
+    }
+
+    function sendOnce(){
+      if (!navigator.geolocation){
+        alert('Geolocation not supported on this device.');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const acc = pos.coords.accuracy || null;
+        sendLocation(lat, lon, acc);
+      }, err => {
+        console.error(err);
+        alert('Error getting location: ' + err.message);
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 10000
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      initSocket();
+    });
+  </script>
+{% endblock %}

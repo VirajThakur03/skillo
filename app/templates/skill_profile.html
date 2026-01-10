@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="profile">
+    <div class="profile-left">
+      <div class="avatar big">{{ provider.name[0]|upper }}</div>
+
+      <h2>{{ provider.name }}</h2>
+      <p class="muted">{{ provider.location }}</p>
+
+      <p>
+        ⭐ {{ '%.1f'|format(provider.rating or 0) }}
+        ({{ provider.completed_jobs or 0 }} jobs)
+      </p>
+
+      {% if provider.is_verified %}
+        <p>✅ Verified provider</p>
+      {% endif %}
+
+      {% if provider.badges %}
+        <p>
+          Badges:
+          {% for b in provider.badges %}
+            <span class="badge">{{ b.replace('_', ' ') }}</span>
+          {% endfor %}
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="profile-right">
+      <h1>{{ skill.title }}</h1>
+      <p>{{ skill.description }}</p>
+
+      <p class="price">Price: ₹{{ '%.0f'|format(skill.price) }}</p>
+
+      <div class="actions">
+        <a class="btn primary"
+           href="{{ url_for('front.booking_page', skill_id=skill.id) }}">
+          Book Now
+        </a>
+
+        <a class="btn ghost"
+           href="{{ url_for('front.chat_page', room='skill_' ~ skill.id) }}">
+          Message
+        </a>
+
+        <button class="btn neon" onclick="shareSkill()">
+          Share
+        </button>
+      </div>
+
+      <hr>
+
+      <h3>Reviews</h3>
+      <p class="muted">
+        Reviews will appear here.  
+        API ready: <code>/api/bookings/&lt;id&gt;/review</code>.
+      </p>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function shareSkill(){
+    const url = window.location.href;
+    if (navigator.share){
+      navigator.share({
+        title: 'Check this provider on Sklio',
+        url: url
+      });
+    } else {
+      navigator.clipboard.writeText(url)
+        .then(() => alert('Link copied to clipboard!'))
+        .catch(() => alert('Copy failed'));
+    }
+  }
+</script>
+{% endblock %}

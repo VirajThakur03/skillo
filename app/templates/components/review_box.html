@@ -1,0 +1,23 @@
+<div class="card glass" id="reviewBox" style="display:none; margin-top:16px;">
+  <h3>⭐ Rate your experience</h3>
+
+  <div id="starRow" style="font-size:24px; cursor:pointer;">
+    <span onclick="setRating(1)">☆</span>
+    <span onclick="setRating(2)">☆</span>
+    <span onclick="setRating(3)">☆</span>
+    <span onclick="setRating(4)">☆</span>
+    <span onclick="setRating(5)">☆</span>
+  </div>
+
+  <textarea
+    id="reviewComment"
+    placeholder="Write a short review (optional)"
+    style="width:100%; margin-top:10px; padding:10px;"
+  ></textarea>
+
+  <button class="btn primary" style="margin-top:10px;" onclick="submitReview()">
+    Submit Review
+  </button>
+
+  <p class="muted" id="reviewMsg"></p>
+</div>

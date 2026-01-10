@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sklio_user
+      POSTGRES_PASSWORD: sklio_pass
+      POSTGRES_DB: sklio_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  web:
+    build: .
+    container_name: sklio-web
+    depends_on:
+      - db
+      - redis
+    environment:
+      - FLASK_APP=run.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://sklio_user:sklio_pass@db:5432/sklio_db
+      - JWT_SECRET_KEY=change_this_jwt_secret
+      - SECRET_KEY=change_this_to_a_long_random_value
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads   # ADD this line
+    working_dir: /app
+    command: ["python", "run.py"]
+
+volumes:
+  pgdata:
+  redisdata:

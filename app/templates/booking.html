@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="card glass">
+    <h2>Book: {{ skill.title }}</h2>
+    <p>Provider: {{ skill.provider.name }}</p>
+
+    <div class="muted" style="margin-bottom:8px;">
+      You must be logged in as a seeker. After login, your access token is stored in localStorage.
+    </div>
+
+    <form id="bookingForm">
+      <label>Choose date &amp; time (ISO format)</label>
+      <input id="scheduled_at" placeholder="2025-12-05T10:00:00" />
+
+      <label>Duration (minutes)</label>
+      <input id="duration" type="number" value="60" />
+
+      <p>Service price: ₹{{ '%.0f'|format(skill.price) }}</p>
+      <p id="walletInfo" class="muted"></p>
+
+      <button class="btn primary" type="submit">Confirm Booking</button>
+    </form>
+
+    <!-- Debug response -->
+    <pre id="resp" style="margin-top:10px;"></pre>
+
+    <!-- Payment + chat + tracking -->
+    <div id="paySection" style="margin-top:14px;"></div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  import { getToken, authFetch } from "/static/js/main.js";
+
+  const walletInfoEl = document.getElementById("walletInfo");
+  const respEl = document.getElementById("resp");
+  const payDiv = document.getElementById("paySection");
+
+  /* ---------------- Wallet ---------------- */
+  async function loadWalletInfo(){
+    if(!getToken()){
+      walletInfoEl.innerText =
+        "Not logged in. Please log in from Demo Login before booking.";
+      return;
+    }
+
+    const res = await authFetch("/api/auth/me");
+    if(res.ok){
+      const bal = Number(res.data.wallet_balance || 0);
+      walletInfoEl.innerText =
+        `Wallet balance (referral credits): ₹${bal.toFixed(0)} — used first.`;
+    } else {
+      walletInfoEl.innerText = "Unable to load wallet info.";
+    }
+  }
+
+  /* ---------------- Booking ---------------- */
+  async function submitBooking(e){
+    e.preventDefault();
+
+    if(!getToken()){
+      alert("Please login first");
+      window.location.href = "/demo_login";
+      return;
+    }
+
+    const scheduled_at = document.getElementById("scheduled_at").value;
+    const duration = Number(document.getElementById("duration").value || 60);
+
+    if(!scheduled_at){
+      alert("Please enter date & time (ISO format)");
+      return;
+    }
+
+    const res = await authFetch("/api/bookings", {
+      method: "POST",
+      body: JSON.stringify({
+        skill_id: {{ skill.id }},
+        scheduled_at,
+        duration_minutes: duration
+      })
+    });
+
+    respEl.innerText = JSON.stringify(res.data, null, 2);
+
+    if(!res.ok){
+      alert(res.data?.error || "Booking failed");
+      return;
+    }
+
+    const bookingId = res.data.id;
+    const remaining = res.data.remaining_to_pay || 0;
+    const referralUsed = res.data.referral_credit_used || 0;
+
+    const chatUrl  = `/chat/booking_${bookingId}`;
+    const trackUrl = `/track/${bookingId}`;
+
+    if(remaining > 0){
+      payDiv.innerHTML = `
+        <button class="btn neon" id="payBtn">
+          Pay remaining ₹${remaining.toFixed(0)}
+        </button>
+        <p class="muted">Referral credits used: ₹${referralUsed.toFixed(0)}</p>
+        <p>
+          <a href="${chatUrl}">Go to chat</a> •
+          <a href="${trackUrl}">Track worker</a>
+        </p>
+      `;
+      document
+        .getElementById("payBtn")
+        .addEventListener("click", () => payBooking(bookingId));
+    } else {
+      payDiv.innerHTML = `
+        <p>No payment required (covered by referral credits).</p>
+        <p>
+          <a href="${chatUrl}">Go to chat</a> •
+          <a href="${trackUrl}">Track worker</a>
+        </p>
+      `;
+    }
+  }
+
+  /* ---------------- Payment ---------------- */
+  async function payBooking(bookingId){
+    const res = await authFetch(`/api/bookings/${bookingId}/pay`, {
+      method: "POST",
+      body: JSON.stringify({ payment_ref: `DEMO-${bookingId}` })
+    });
+
+    if(res.ok){
+      alert("Payment successful!");
+      window.location.href = `/track/${bookingId}`;
+    } else {
+      alert("Payment failed");
+    }
+  }
+
+  /* ---------------- Init ---------------- */
+  document
+    .getElementById("bookingForm")
+    .addEventListener("submit", submitBooking);
+
+  document.addEventListener("DOMContentLoaded", loadWalletInfo);
+</script>
+{% endblock %}

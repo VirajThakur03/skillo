@@ -1,0 +1,88 @@
+<!-- app/templates/home.html -->
+{% extends "base.html" %}
+
+{% block content %}
+
+  <!-- Search bar -->
+  <div class="search-row">
+    <input id="q" placeholder="Search skills, e.g. electrician" value="{{ q }}">
+    <input id="location" placeholder="Location (city)" value="{{ location }}">
+    <button class="btn primary" onclick="doSearch()">Search</button>
+  </div>
+
+  <!-- Quick categories (flip-cards with quickSearch) -->
+  <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; justify-content:center;">
+
+    <div class="flip-card" onclick="quickSearch('electrician')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">Electrician</div>
+        <div class="flip-card-back">From ₹300 • 4.8★</div>
+      </div>
+    </div>
+
+    <div class="flip-card" onclick="quickSearch('plumber')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">Plumber</div>
+        <div class="flip-card-back">From ₹250 • 4.7★</div>
+      </div>
+    </div>
+
+    <div class="flip-card" onclick="quickSearch('carpenter')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">Carpenter</div>
+        <div class="flip-card-back">Custom furniture • 4.6★</div>
+      </div>
+    </div>
+
+    <div class="flip-card" onclick="quickSearch('tutor')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">Tutor</div>
+        <div class="flip-card-back">Maths / English • 4.9★</div>
+      </div>
+    </div>
+
+    <div class="flip-card" onclick="quickSearch('cleaning')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">Cleaning</div>
+        <div class="flip-card-back">Deep clean • 4.8★</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Skills list -->
+  <section class="cards" style="margin-top:24px;">
+    {% if skills %}
+      {% for s in skills %}
+        {% include "components/skill_card.html" %}
+      {% endfor %}
+    {% else %}
+      <div class="card glass">
+        <h3>No skills found</h3>
+        <p class="muted">
+          Try clearing filters or searching a different keyword like
+          <strong>electrician</strong>, <strong>plumber</strong> or <strong>tutor</strong>.
+        </p>
+        <button class="btn ghost" onclick="clearFilters()">Clear filters</button>
+      </div>
+    {% endif %}
+  </section>
+
+  <script>
+    function doSearch(){
+      const q = document.getElementById('q').value;
+      const location = document.getElementById('location').value;
+      window.location.href = `/home?q=${encodeURIComponent(q)}&location=${encodeURIComponent(location)}`;
+    }
+
+    function quickSearch(term){
+      document.getElementById('q').value = term;
+      doSearch();
+    }
+
+    function clearFilters(){
+      window.location.href = '/home';
+    }
+  </script>
+
+{% endblock %}

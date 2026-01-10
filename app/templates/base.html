@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sklio • Local Skills</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Sklio — local skill marketplace for plumbers, electricians, tutors and more with live tracking, chat and wallet referrals.">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+  <script>
+    // small global config: API base
+    const API_BASE = "/api";
+  </script>
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="{{ url_for('front.index') }}">
+        <span class="logo-box"></span>
+        <span class="brand-text">Sklio</span>
+      </a>
+
+      <nav class="nav">
+        {% set endpoint = request.endpoint or '' %}
+
+        <a href="{{ url_for('front.home') }}"
+           class="{% if endpoint.startswith('front.home') %}active{% endif %}">
+          Home
+        </a>
+
+        <a href="{{ url_for('front.wallet_page') }}"
+           class="{% if endpoint.startswith('front.wallet_page') %}active{% endif %}">
+          Wallet
+        </a>
+
+        <a href="{{ url_for('front.index') }}"
+           class="{% if endpoint == 'front.index' %}active{% endif %}">
+          Docs
+        </a>
+
+        <a class="btn neon"
+           href="{{ url_for('front.demo_login') }}"
+           style="margin-left:16px;">
+          Demo Login
+        </a>
+      </nav>
+
+      <!-- Auth bar controlled by JS (main.js) -->
+      <div data-auth-bar class="auth-bar"></div>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      © Sklio — Local skill marketplace
+    </div>
+  </footer>
+
+  <!-- Socket.IO (for chat + live tracking) -->
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+  <!-- Main JS (can populate [data-auth-bar] and provide authFetch, etc.) -->
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+  <!-- Fade-in animation on scroll -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const els = document.querySelectorAll('.card, .skill-card, .flip-card');
+      const onScroll = () => {
+        const trigger = window.innerHeight * 0.9;
+        els.forEach(el => {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < trigger) {
+            el.style.opacity = 1;
+            el.style.transform = 'translateY(0px)';
+          }
+        });
+      };
+      els.forEach(el => {
+        el.style.opacity = 0;
+        el.style.transform = 'translateY(22px)';
+        el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      });
+      window.addEventListener('scroll', onScroll);
+      onScroll();
+    });
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

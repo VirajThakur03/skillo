@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <!-- ================= TRACKING CARD ================= -->
+  <div class="card glass">
+    <h2>Track your worker</h2>
+    <p class="muted">Booking #{{ booking_id }}</p>
+
+    <div id="map" style="height:380px; border-radius:12px; overflow:hidden;"></div>
+
+    <p id="status" class="muted" style="margin-top:8px;">
+      Waiting for worker location…
+    </p>
+
+    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn ghost" type="button" onclick="recenterOnWorker()">
+        Recenter on worker
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= REVIEW CARD (SEEKER ONLY) ================= -->
+  <div
+    id="reviewBox"
+    class="card glass"
+    style="margin-top:16px; display:none;"
+  >
+    <h3>⭐ Rate your experience</h3>
+
+    <div id="starRow" style="font-size:26px; cursor:pointer;">
+      <span onclick="setRating(1)">☆</span>
+      <span onclick="setRating(2)">☆</span>
+      <span onclick="setRating(3)">☆</span>
+      <span onclick="setRating(4)">☆</span>
+      <span onclick="setRating(5)">☆</span>
+    </div>
+
+    <textarea
+      id="reviewComment"
+      placeholder="Write a short review (optional)"
+      style="width:100%; margin-top:10px; padding:10px; border-radius:8px;"
+    ></textarea>
+
+    <button class="btn primary" style="margin-top:10px;" onclick="submitReview()">
+      Submit Review
+    </button>
+
+    <p id="reviewMsg" class="muted" style="margin-top:8px;"></p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <!-- ================= LEAFLET ================= -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    crossorigin=""
+  ></script>
+
+  <script>
+    const BOOKING_ID = {{ booking_id }};
+    const ROOM = "booking_" + BOOKING_ID;
+    const token = localStorage.getItem("sklio_access_token") || null;
+
+    let map, marker, lastLatLng = null;
+    let ratingValue = 0;
+
+    /* ================= MAP ================= */
+
+    function setStatus(text){
+      const el = document.getElementById("status");
+      if (el) el.innerText = text;
+    }
+
+    function initMap(){
+      map = L.map("map").setView([20.5937, 78.9629], 5);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19
+      }).addTo(map);
+    }
+
+    function updateWorkerMarker(lat, lon, lastSeen){
+      const latlng = [lat, lon];
+      lastLatLng = latlng;
+
+      if(!marker){
+        marker = L.marker(latlng).addTo(map);
+        map.setView(latlng, 14);
+      } else {
+        marker.setLatLng(latlng);
+      }
+
+      let label = lastSeen;
+      try {
+        const d = new Date(lastSeen);
+        if (!isNaN(d.getTime())) {
+          label = d.toLocaleString();
+        }
+      } catch(e){}
+
+      setStatus("Worker last seen at: " + label);
+    }
+
+    function recenterOnWorker(){
+      if (map && lastLatLng){
+        map.setView(lastLatLng, 15);
+      }
+    }
+
+    /* ================= REVIEW ================= */
+
+    function setRating(n){
+      ratingValue = n;
+      const stars = document.querySelectorAll("#starRow span");
+      stars.forEach((s, i) => {
+        s.textContent = i < n ? "★" : "☆";
+      });
+    }
+
+    async function submitReview(){
+      if (ratingValue < 1){
+        alert("Please select a rating");
+        return;
+      }
+
+      const comment =
+        document.getElementById("reviewComment").value || "";
+
+      const res = await authFetch(`/api/bookings/${BOOKING_ID}/review`, {
+        method: "POST",
+        body: JSON.stringify({
+          rating: ratingValue,
+          comment
+        })
+      });
+
+      const msg = document.getElementById("reviewMsg");
+
+      if (res.ok){
+        msg.innerText = "✅ Review submitted successfully!";
+        msg.style.color = "green";
+        document.getElementById("reviewBox").style.display = "none";
+      } else {
+        msg.innerText = res.data?.error || "Error submitting review";
+        msg.style.color = "red";
+      }
+    }
+
+    async function checkReviewEligibility(){
+      const res = await authFetch(`/api/bookings/${BOOKING_ID}`, {
+        method: "GET"
+      });
+
+      if (res.ok && res.data.status === "completed"){
+        document.getElementById("reviewBox").style.display = "block";
+      }
+    }
+
+    /* ================= SOCKET ================= */
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initMap();
+      checkReviewEligibility();
+
+      const socket = io({ auth: { token } });
+
+      socket.on("connect", () => {
+        socket.emit("join", { room: ROOM });
+      });
+
+      socket.on("disconnect", () => {
+        setStatus("Disconnected from server. Waiting for reconnection…");
+      });
+
+      socket.on("worker_location_update", (data) => {
+        if (data.booking_id !== BOOKING_ID) return;
+
+        const { latitude, longitude, last_seen_at } = data;
+        if (typeof latitude !== "number" || typeof longitude !== "number") return;
+
+        updateWorkerMarker(latitude, longitude, last_seen_at);
+      });
+    });
+  </script>
+{% endblock %}

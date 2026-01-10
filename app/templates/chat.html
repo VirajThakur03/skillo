@@ -1,0 +1,70 @@
+<!-- app/templates/chat.html -->
+{% extends "base.html" %}
+{% block content %}
+  <div class="card chat-card">
+    <h3>Chat Room: {{ room }}</h3>
+    <div id="messages" class="messages"></div>
+    <div class="chat-composer">
+      <input id="msg" placeholder="Type message..." />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script>
+  const ROOM = "{{ room }}";
+  const token = localStorage.getItem('sklio_access_token') || null;
+
+  // fetch historical messages
+  async function loadHistory(){
+    const res = await fetch(`/api/chat/room/${ROOM}`);
+    if(res.ok){
+      const data = await res.json();
+      const el = document.getElementById('messages');
+      el.innerHTML = '';
+      data.forEach(m => {
+        const p = document.createElement('div');
+        p.className = 'message';
+        p.innerText = (m.sender_name ? m.sender_name + ': ' : '') + m.content;
+        el.appendChild(p);
+      });
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  loadHistory();
+
+  // connect socket with auth token
+  const socket = io({ auth: { token } });
+
+  socket.on('connect', () => {
+    console.log('connected', socket.id);
+    socket.emit('join', {room: ROOM});
+  });
+
+  socket.on('joined', (data) => {
+    console.log('joined', data);
+  });
+
+  socket.on('message', (data) => {
+    if(!data || data.room !== ROOM) return;
+    const el = document.getElementById('messages');
+    const p = document.createElement('div');
+    p.className = 'message';
+    p.innerText = (data.sender_name ? data.sender_name + ': ' : '') + data.content;
+    el.appendChild(p);
+    el.scrollTop = el.scrollHeight;
+  });
+
+  document.getElementById('sendBtn').addEventListener('click', sendMsg);
+  function sendMsg(){
+    const txt = document.getElementById('msg').value;
+    if(!txt) return;
+    // include token also in payload for safety (server tries token in payload first)
+    socket.emit('message', {room: ROOM, message: txt, token});
+    document.getElementById('msg').value = '';
+  }
+</script>
+{% endblock %}
