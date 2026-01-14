@@ -132,17 +132,6 @@ export function logout() {
 }
 
 // ================== FETCH HELPERS ==================
-export async function apiFetch(path, opts = {}) {
-  opts.headers = opts.headers || {};
-  opts.headers['Content-Type'] =
-    opts.headers['Content-Type'] || 'application/json';
-
-  const res = await fetch(path, opts);
-  const data = await res.json().catch(() => ({}));
-
-  return { ok: res.ok, status: res.status, data };
-}
-
 export async function authFetch(path, opts = {}) {
   opts.headers = opts.headers || {};
   const token = getToken();
@@ -151,18 +140,14 @@ export async function authFetch(path, opts = {}) {
     opts.headers['Authorization'] = 'Bearer ' + token;
   }
 
-  opts.headers['Content-Type'] =
-    opts.headers['Content-Type'] || 'application/json';
-
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
 
-  // auto logout on expired token
   if (res.status === 401) {
     clearToken();
   }
 
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok, data };
 }
 
 // ================== CURRENT USER ==================
@@ -170,16 +155,14 @@ export async function getCurrentUser(force = false) {
   if (!force) {
     const cached = localStorage.getItem(USER_KEY);
     if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (e) {}
+      try { return JSON.parse(cached); } catch {}
     }
   }
 
   const token = getToken();
   if (!token) return null;
 
-  const res = await authFetch('/api/auth/me', { method: 'GET' });
+  const res = await authFetch('/api/auth/me');
   if (res.ok) {
     localStorage.setItem(USER_KEY, JSON.stringify(res.data));
     return res.data;
@@ -189,52 +172,59 @@ export async function getCurrentUser(force = false) {
 
 // ================== GEOLOCATION ==================
 export function getLocation(timeout = 10000) {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
-      pos =>
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }),
+      pos => resolve({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      }),
       () => resolve(null),
-      {
-        enableHighAccuracy: true,
-        timeout,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout, maximumAge: 0 }
     );
   });
 }
 
-// ================== HEADER AUTH BAR ==================
+// ================== GLOBAL PROVIDER VERIFICATION GUARD ==================
 document.addEventListener('DOMContentLoaded', async () => {
+  const token = getToken();
+  if (!token) return;
+
+  const user = await getCurrentUser(true);
+  if (!user) return;
+
+  const path = window.location.pathname;
+
+  // 🔐 PROVIDER VERIFICATION ENFORCEMENT
+  if (user.role === 'PROVIDER') {
+
+    // Step 1: Aadhaar / document
+    if (user.verification_status === 'pending' &&
+        path !== '/provider_verification') {
+      window.location.replace('/provider_verification');
+      return;
+    }
+
+    // Step 2: Face video
+    if (user.verification_status === 'verified' &&
+        user.verification_video_status === 'pending' &&
+        path !== '/provider_verification_video') {
+      window.location.replace('/provider_verification_video');
+      return;
+    }
+  }
+
+  // ================== AUTH BAR ==================
   const authBar = document.querySelector('[data-auth-bar]');
   if (!authBar) return;
 
-  const token = getToken();
+  authBar.innerHTML = `
+    <span class="muted">
+      Hi, ${user.name} (${user.role})
+    </span>
+    <button class="btn ghost small" id="logoutBtn">Logout</button>
+  `;
 
-  if (token) {
-    const user = await getCurrentUser();
-
-    authBar.innerHTML = `
-      <span class="muted">
-        Hi, ${user?.name || 'User'} (${user?.role || ''})
-      </span>
-      <button class="btn ghost small" id="logoutBtn">Logout</button>
-    `;
-
-    document
-      .getElementById('logoutBtn')
-      ?.addEventListener('click', logout);
-  } else {
-    authBar.innerHTML = `
-      <a href="/demo_login" class="btn ghost small">Login</a>
-    `;
-  }
+  document.getElementById('logoutBtn')
+    ?.addEventListener('click', logout);
 });
-

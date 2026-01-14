@@ -4,34 +4,40 @@ import enum
 from .extensions import db
 
 
+# ====================
+# ENUMS (MATCH DB)
+# ====================
+
 class RoleEnum(enum.Enum):
-    SEEKER = "seeker"
-    PROVIDER = "provider"
+    SEEKER = "SEEKER"
+    PROVIDER = "PROVIDER"
 
 
 class BookingStatus(enum.Enum):
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    DECLINED = "declined"
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    DECLINED = "DECLINED"
 
 
 class PaymentStatus(enum.Enum):
-    AUTHORIZED = "authorized"
-    CAPTURED = "captured"
-    REFUNDED = "refunded"
-    NONE = "none"
+    NONE = "NONE"
+    AUTHORIZED = "AUTHORIZED"
+    CAPTURED = "CAPTURED"
+    REFUNDED = "REFUNDED"
 
 
-# app/models.py
 class VerificationStatus(enum.Enum):
-    PENDING = "pending"
-    VERIFIED = "verified"
-    REJECTED = "rejected"
+    pending = "pending"
+    verified = "verified"
+    rejected = "rejected"
 
 
+# ====================
+# USER
+# ====================
 
 class User(db.Model):
     __tablename__ = "users"
@@ -43,7 +49,16 @@ class User(db.Model):
     phone = db.Column(db.String(30), unique=True, index=True, nullable=True)
 
     password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.SEEKER)
+
+    role = db.Column(
+        db.Enum(
+            RoleEnum,
+            name="roleenum",
+            # values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=RoleEnum.SEEKER,
+    )
 
     bio = db.Column(db.Text, nullable=True)
 
@@ -55,23 +70,32 @@ class User(db.Model):
     rating = db.Column(db.Float, default=0.0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # ✅ Verification (DOCUMENT)
+    # ✅ Document verification
     verification_status = db.Column(
-        db.Enum(VerificationStatus),
+        db.Enum(
+            VerificationStatus,
+            name="verificationstatus",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
-        default=VerificationStatus.PENDING,
+        default=VerificationStatus.pending,
     )
+
     is_verified = db.Column(db.Boolean, default=False, nullable=False)
     document_filename = db.Column(db.String(512), nullable=True)
     document_type = db.Column(db.String(100), nullable=True)
     verification_notes = db.Column(db.Text, nullable=True)
 
-    # ✅ Verification (VIDEO)
+    # ✅ Video verification
     verification_video_filename = db.Column(db.String(512), nullable=True)
     verification_video_status = db.Column(
-        db.Enum(VerificationStatus),
+        db.Enum(
+            VerificationStatus,
+            name="verificationstatus",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
-        default=VerificationStatus.PENDING,
+        default=VerificationStatus.pending,
     )
 
     # 💰 Referral & Wallet
@@ -92,7 +116,7 @@ class User(db.Model):
     completed_jobs = db.Column(db.Integer, default=0)
     avg_response_seconds = db.Column(db.Integer, default=0)
 
-    # 🚀 Featured
+    # 🚀 Featured / Boost
     is_featured = db.Column(db.Boolean, default=False)
     featured_until = db.Column(db.DateTime, nullable=True)
     boost_until = db.Column(db.DateTime, nullable=True)
@@ -121,9 +145,9 @@ class User(db.Model):
         return bcrypt.check_password_hash(self.password_hash, password)
 
 
-# --------------------
+# ====================
 # SKILL
-# --------------------
+# ====================
 
 class Skill(db.Model):
     __tablename__ = "skills"
@@ -149,9 +173,9 @@ class Skill(db.Model):
     provider = db.relationship("User", back_populates="skills")
 
 
-# --------------------
+# ====================
 # BOOKING
-# --------------------
+# ====================
 
 class Booking(db.Model):
     __tablename__ = "bookings"
@@ -169,12 +193,21 @@ class Booking(db.Model):
     currency = db.Column(db.String(10), default="INR")
 
     status = db.Column(
-        db.Enum(BookingStatus),
+        db.Enum(
+            BookingStatus,
+            name="bookingstatus",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
         default=BookingStatus.PENDING,
     )
+
     payment_status = db.Column(
-        db.Enum(PaymentStatus),
+        db.Enum(
+            PaymentStatus,
+            name="paymentstatus",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
         default=PaymentStatus.NONE,
     )
@@ -206,9 +239,9 @@ class Booking(db.Model):
     skill = db.relationship("Skill", foreign_keys=[skill_id])
 
 
-# --------------------
+# ====================
 # MESSAGE (CHAT)
-# --------------------
+# ====================
 
 class Message(db.Model):
     __tablename__ = "messages"

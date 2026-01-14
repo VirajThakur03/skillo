@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Sklio — Demo Login</title>
+  <title>Sklio — Login / Register</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
@@ -49,7 +49,6 @@
       <option value="seeker">Seeker</option>
       <option value="provider">Provider</option>
     </select>
-
     <button id="registerBtn">Register</button>
 
     <hr/>
@@ -57,23 +56,18 @@
     <h3>Login</h3>
     <input id="login_email" placeholder="Email" />
     <input id="login_password" type="password" placeholder="Password" />
-
     <button id="loginBtn">Login</button>
 
     <pre id="output"></pre>
   </div>
 
-  <!-- NORMAL SCRIPT (NO MODULE) -->
-  <script src="/static/js/main.js"></script>
-
-  <script>
-    console.log("Demo login JS loaded");
+  <!-- ✅ MODULE SCRIPT -->
+  <script type="module">
+    import { setToken, getLocation } from "/static/js/main.js";
 
     const out = document.getElementById('output');
 
     async function register(){
-      console.log("Register clicked");
-
       const name = document.getElementById('name').value.trim();
       const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
@@ -84,9 +78,9 @@
         return;
       }
 
-      const loc = window.getLocation ? await getLocation() : null;
-
+      const loc = await getLocation();
       const payload = { name, email, password, role };
+
       if(loc){
         payload.latitude = loc.latitude;
         payload.longitude = loc.longitude;
@@ -101,19 +95,39 @@
       const data = await res.json();
       out.textContent = JSON.stringify(data, null, 2);
 
-      if(res.ok && data.access_token){
-        setToken(data.access_token);
-        localStorage.setItem('sklio_user', JSON.stringify(data.user));
-        window.location.href =
-          data.user.role === 'provider'
-            ? '/provider_verification'
-            : '/home';
+     if (res.ok && data.access_token) {
+      setToken(data.access_token);
+      localStorage.setItem('sklio_user', JSON.stringify(data.user));
+
+      // 🔐 PROVIDER VERIFICATION FLOW
+      if (data.user.role === "PROVIDER") {
+
+        // Aadhaar not uploaded
+        if (data.user.verification_status === "pending") {
+          window.location.href = "/provider_verification";
+          return;
+        }
+
+        // Aadhaar uploaded but face not done
+        if (data.user.verification_video_status === "pending") {
+          window.location.href = "/provider_verification_video";
+          return;
+        }
       }
+
+      // Normal users / verified providers
+      if (data.user.role === "PROVIDER") {
+        window.location.href = "/provider_verification";
+      } else {
+        window.location.href = "/home";
+      }
+
+    }
+
+
     }
 
     async function login(){
-      console.log("Login clicked");
-
       const email = document.getElementById('login_email').value.trim();
       const password = document.getElementById('login_password').value;
 

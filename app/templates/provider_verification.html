@@ -49,6 +49,7 @@
     document.getElementById('resp').innerText = JSON.stringify(data, null, 2);
     if(res.status === 201){
       alert('Document uploaded and pending verification.');
+      window.location.href = "/provider_verification_video";
     }
   }
 </script>
