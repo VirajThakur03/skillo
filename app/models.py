@@ -31,7 +31,9 @@ class PaymentStatus(enum.Enum):
 
 class VerificationStatus(enum.Enum):
     pending = "pending"
-    verified = "verified"
+    document_verified = "document_verified"
+    face_verified = "face_verified"
+    completed = "completed"
     rejected = "rejected"
 
 

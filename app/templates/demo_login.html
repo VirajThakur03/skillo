@@ -63,97 +63,105 @@
 
   <!-- ✅ MODULE SCRIPT -->
   <script type="module">
-    import { setToken, getLocation } from "/static/js/main.js";
+  import { setToken, getLocation } from "/static/js/main.js";
 
-    const out = document.getElementById('output');
+  const out = document.getElementById('output');
 
-    async function register(){
-      const name = document.getElementById('name').value.trim();
-      const email = document.getElementById('email').value.trim();
-      const password = document.getElementById('password').value;
-      const role = document.getElementById('role').value;
+  // =========================
+  // REGISTER
+  // =========================
+  async function register(){
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const role = document.getElementById('role').value;
 
-      if(!name || !email || !password){
-        alert("All fields required");
-        return;
-      }
+    if(!name || !email || !password){
+      alert("All fields required");
+      return;
+    }
 
-      const loc = await getLocation();
-      const payload = { name, email, password, role };
+    const loc = await getLocation();
+    const payload = { name, email, password, role };
 
-      if(loc){
-        payload.latitude = loc.latitude;
-        payload.longitude = loc.longitude;
-      }
+    if(loc){
+      payload.latitude = loc.latitude;
+      payload.longitude = loc.longitude;
+    }
 
-      const res = await fetch('/api/auth/register', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify(payload)
-      });
+    const res = await fetch('/api/auth/register', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-      const data = await res.json();
-      out.textContent = JSON.stringify(data, null, 2);
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
 
-     if (res.ok && data.access_token) {
-      setToken(data.access_token);
-      localStorage.setItem('sklio_user', JSON.stringify(data.user));
+    if (!res.ok || !data.access_token) return;
 
-      // 🔐 PROVIDER VERIFICATION FLOW
-      if (data.user.role === "PROVIDER") {
+    setToken(data.access_token);
+    localStorage.setItem('sklio_user', JSON.stringify(data.user));
 
-        // Aadhaar not uploaded
-        if (data.user.verification_status === "pending") {
-          window.location.href = "/provider_verification";
-          return;
-        }
+    // 🔐 PROVIDER ALWAYS STARTS WITH DOCUMENT
+    if (data.user.role === "PROVIDER") {
+      window.location.href = "/provider_verification";
+      return;
+    }
 
-        // Aadhaar uploaded but face not done
-        if (data.user.verification_video_status === "pending") {
-          window.location.href = "/provider_verification_video";
-          return;
-        }
-      }
+    // seeker
+    window.location.href = "/home";
+  }
 
-      // Normal users / verified providers
-      if (data.user.role === "PROVIDER") {
+  // =========================
+  // LOGIN
+  // =========================
+  async function login(){
+    const email = document.getElementById('login_email').value.trim();
+    const password = document.getElementById('login_password').value;
+
+    if(!email || !password){
+      alert("Email & password required");
+      return;
+    }
+
+    const res = await fetch('/api/auth/login', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+
+    if (!res.ok || !data.access_token) return;
+
+    setToken(data.access_token);
+    localStorage.setItem('sklio_user', JSON.stringify(data.user));
+
+    // 🔐 PROVIDER VERIFICATION FLOW (ORDER MATTERS)
+    if (data.user.role === "PROVIDER") {
+
+      // 1️⃣ Aadhaar / Document missing
+      if (!data.user.document_filename) {
         window.location.href = "/provider_verification";
-      } else {
-        window.location.href = "/home";
-      }
-
-    }
-
-
-    }
-
-    async function login(){
-      const email = document.getElementById('login_email').value.trim();
-      const password = document.getElementById('login_password').value;
-
-      if(!email || !password){
-        alert("Email & password required");
         return;
       }
 
-      const res = await fetch('/api/auth/login', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-
-      const data = await res.json();
-      out.textContent = JSON.stringify(data, null, 2);
-
-      if(res.ok && data.access_token){
-        setToken(data.access_token);
-        localStorage.setItem('sklio_user', JSON.stringify(data.user));
-        window.location.href = '/home';
+      // 2️⃣ Face video missing
+      if (!data.user.verification_video_filename) {
+        window.location.href = "/provider_verification_video";
+        return;
       }
     }
 
-    document.getElementById('registerBtn').onclick = register;
-    document.getElementById('loginBtn').onclick = login;
-  </script>
+    // 3️⃣ seeker OR fully verified provider
+    window.location.href = "/home";
+  }
+
+  document.getElementById('registerBtn').onclick = register;
+  document.getElementById('loginBtn').onclick = login;
+</script>
+
 </body>
 </html>

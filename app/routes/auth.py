@@ -10,6 +10,7 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
 )
+from app.verify.document_verify import extract_text, validate_document
 from werkzeug.utils import secure_filename
 import os
 import random
@@ -211,31 +212,62 @@ def upload_document():
         return {"error": "file required"}, 400
 
     file = request.files["file"]
-    doc_type = request.form.get("document_type", "")
+    doc_type = request.form.get("document_type", "").strip().lower()
 
     if not file.filename:
         return {"error": "no selected file"}, 400
 
     if not allowed_file(file.filename):
-        return {"error": "file type not allowed"}, 400
+        return {"error": "unsupported file type"}, 400
 
-    upload_folder = current_app.config.get("UPLOAD_FOLDER")
-    if not upload_folder:
-        return {"error": "UPLOAD_FOLDER not configured"}, 500
-
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
     os.makedirs(upload_folder, exist_ok=True)
 
     filename = secure_filename(file.filename)
     save_name = f"user_{user.id}_{int(time.time())}_{filename}"
-    file.save(os.path.join(upload_folder, save_name))
+    file_path = os.path.join(upload_folder, save_name)
+    file.save(file_path)
 
+    # ---------- OCR ----------
+    text = extract_text(file_path)
+
+    if not text.strip():
+        return {"error": "No readable text found"}, 400
+
+    import re
+
+    is_valid = False
+
+    if doc_type == "aadhaar":
+        is_valid = bool(re.search(r"\b\d{4}\s?\d{4}\s?\d{4}\b", text))
+
+    elif doc_type == "passport":
+        is_valid = bool(re.search(r"\b[A-Z][0-9]{7}\b", text))
+
+    elif doc_type in ["driving license", "driving licence"]:
+        is_valid = bool(re.search(r"\b[A-Z]{2}\d{2}\s?\d{11}\b", text))
+
+    elif doc_type == "other":
+        is_valid = True
+
+    if not is_valid:
+        return {"error": "Invalid document image"}, 400
+
+    # ---------- SAVE ----------
     user.document_filename = save_name
     user.document_type = doc_type
-    user.verification_status = VerificationStatus.pending
+    user.verification_status = VerificationStatus.document_verified
+    user.verification_video_status = VerificationStatus.pending
     user.is_verified = False
 
     db.session.commit()
-    return {"message": "document uploaded, pending verification"}, 201
+
+    return {
+        "message": "Document verified",
+        "next": "face_verification"
+    }, 201
+
+
 
 
 # ==========================
@@ -246,32 +278,48 @@ def upload_document():
 def upload_verification_video():
     user = User.query.get(int(get_jwt_identity()))
 
-    if not user:
-        return {"error": "unauthenticated"}, 401
+    if user.verification_status != VerificationStatus.document_verified:
+        return {"error": "document verification required"}, 400
 
-    if user.role != RoleEnum.PROVIDER:
-        return {"error": "only providers allowed"}, 403
+    file = request.files.get("file")
+    if not file:
+        return {"error": "video required"}, 400
 
-    if "file" not in request.files:
-        return {"error": "file required"}, 400
-
-    file = request.files["file"]
-
-    if not file.filename:
-        return {"error": "no selected file"}, 400
-
-    upload_folder = current_app.config.get("UPLOAD_FOLDER")
-    if not upload_folder:
-        return {"error": "UPLOAD_FOLDER not configured"}, 500
-
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
     os.makedirs(upload_folder, exist_ok=True)
 
     filename = secure_filename(file.filename)
-    save_name = f"user_{user.id}_video_{int(time.time())}_{filename}"
+    save_name = f"user_{user.id}_face_{int(time.time())}_{filename}"
     file.save(os.path.join(upload_folder, save_name))
 
     user.verification_video_filename = save_name
-    user.verification_video_status = VerificationStatus.pending
+    user.verification_status = VerificationStatus.face_verified
 
     db.session.commit()
-    return {"message": "video uploaded, pending review"}, 201
+
+    return {
+        "message": "Face verification uploaded",
+        "next": "location"
+    }, 201
+
+# ==========================
+# UPLOAD LOCATION CONFIRMATION
+# ==========================
+@auth_bp.route("/confirm_location", methods=["POST"])
+@jwt_required()
+def confirm_location():
+    user = User.query.get(int(get_jwt_identity()))
+
+    if user.verification_status != VerificationStatus.face_verified:
+        return {"error": "face verification required"}, 400
+
+    data = request.get_json() or {}
+    user.latitude = data.get("latitude")
+    user.longitude = data.get("longitude")
+
+    user.verification_status = VerificationStatus.completed
+    user.is_verified = True
+
+    db.session.commit()
+
+    return {"message": "Verification completed"}, 200

@@ -155,7 +155,9 @@ export async function getCurrentUser(force = false) {
   if (!force) {
     const cached = localStorage.getItem(USER_KEY);
     if (cached) {
-      try { return JSON.parse(cached); } catch {}
+      try {
+        return JSON.parse(cached);
+      } catch {}
     }
   }
 
@@ -174,6 +176,7 @@ export async function getCurrentUser(force = false) {
 export function getLocation(timeout = 10000) {
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null);
+
     navigator.geolocation.getCurrentPosition(
       pos => resolve({
         latitude: pos.coords.latitude,
@@ -194,23 +197,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!user) return;
 
   const path = window.location.pathname;
+  const status = user.verification_status;
 
-  // 🔐 PROVIDER VERIFICATION ENFORCEMENT
+  // 🔐 PROVIDER VERIFICATION FLOW (SINGLE SOURCE OF TRUTH)
   if (user.role === 'PROVIDER') {
 
-    // Step 1: Aadhaar / document
-    if (user.verification_status === 'pending' &&
-        path !== '/provider_verification') {
+    // STEP 1 → DOCUMENT
+    if (
+      status === 'pending' &&
+      path !== '/provider_verification'
+    ) {
       window.location.replace('/provider_verification');
       return;
     }
 
-    // Step 2: Face video
-    if (user.verification_status === 'verified' &&
-        user.verification_video_status === 'pending' &&
-        path !== '/provider_verification_video') {
+    // STEP 2 → FACE VIDEO
+    if (
+      status === 'document_verified' &&
+      path !== '/provider_verification_video'
+    ) {
       window.location.replace('/provider_verification_video');
       return;
+    }
+
+    // STEP 3 → LOCATION
+    if (
+      status === 'face_verified' &&
+      path !== '/confirm_location'
+    ) {
+      window.location.replace('/confirm_location');
+      return;
+    }
+
+    // STEP 4 → VERIFIED → HOME
+    if (status === 'completed') {
+      // allowed everywhere
     }
   }
 
@@ -225,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     <button class="btn ghost small" id="logoutBtn">Logout</button>
   `;
 
-  document.getElementById('logoutBtn')
+  document
+    .getElementById('logoutBtn')
     ?.addEventListener('click', logout);
 });

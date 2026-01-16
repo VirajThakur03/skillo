@@ -8,11 +8,12 @@
     <form id="uploadForm" enctype="multipart/form-data" onsubmit="uploadDoc(event)">
       <label>Document type</label>
       <select id="doc_type">
-        <option>Aadhaar</option>
-        <option>Driving License</option>
-        <option>Passport</option>
-        <option>Other</option>
+        <option value="aadhaar">Aadhaar</option>
+        <option value="driving">Driving License</option>
+        <option value="passport">Passport</option>
+        <option value="other">Other</option>
       </select>
+
       <label>Choose file (JPG, PNG, PDF)</label>
       <input type="file" id="doc_file" accept=".png,.jpg,.jpeg,.pdf" />
       <div style="margin-top:12px;">
@@ -21,36 +22,81 @@
     </form>
 
     <div id="resp" style="margin-top:12px;"></div>
-    <p class="muted">After upload, an admin will verify your document. You will be notified when verified.</p>
+    <p class="muted">Document is automatically verified. If valid, you will proceed to face verification.</p>
   </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  async function uploadDoc(e){
-    e.preventDefault();
-    const fileInput = document.getElementById('doc_file');
-    const docType = document.getElementById('doc_type').value;
-    if(!fileInput.files.length){ alert('Choose a file'); return; }
-    const file = fileInput.files[0];
-    const token = localStorage.getItem('sklio_access_token');
-    if(!token){ alert('Please login'); return; }
+async function uploadDoc(e){
+  e.preventDefault();
 
-    const form = new FormData();
-    form.append('file', file);
-    form.append('document_type', docType);
+  const fileInput = document.getElementById('doc_file');
+  const docType = document.getElementById('doc_type').value;
+  const resp = document.getElementById('resp');
 
-    const res = await fetch('/api/auth/upload_document', {
+  if (!fileInput.files.length) {
+    alert('Choose a file');
+    return;
+  }
+
+  const token = localStorage.getItem('sklio_access_token');
+  if (!token) {
+    alert('Please login again');
+    return;
+  }
+
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  btn.innerText = 'Verifying document...';
+
+  const form = new FormData();
+  form.append('file', fileInput.files[0]);
+  form.append('document_type', docType);
+
+  let res, text;
+
+  try {
+    res = await fetch('/api/auth/upload_document', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
+      headers: {
+        'Authorization': 'Bearer ' + token
+      },
       body: form
     });
-    const data = await res.json();
-    document.getElementById('resp').innerText = JSON.stringify(data, null, 2);
-    if(res.status === 201){
-      alert('Document uploaded and pending verification.');
-      window.location.href = "/provider_verification_video";
-    }
+
+    text = await res.text(); // ⚠️ IMPORTANT
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerText = 'Upload';
+    alert('Network error');
+    return;
   }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    btn.disabled = false;
+    btn.innerText = 'Upload';
+    resp.innerText = text;
+    alert('Server error (not JSON)');
+    return;
+  }
+
+  resp.innerText = JSON.stringify(data, null, 2);
+
+  if (!res.ok) {
+    btn.disabled = false;
+    btn.innerText = 'Upload';
+    alert(data.error || 'Verification failed');
+    return;
+  }
+
+  // ✅ SUCCESS
+  alert('Document verified successfully');
+  window.location.href = '/provider_verification_video';
+}
 </script>
+
 {% endblock %}
