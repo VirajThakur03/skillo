@@ -4,7 +4,7 @@ from .config import Config
 from .extensions import socketio, db, migrate, bcrypt, jwt
 from .routes import register_routes
 import logging
-
+import os
 
 def create_app(config_class=Config):
     app = Flask(__name__, instance_relative_config=False)
@@ -13,6 +13,8 @@ def create_app(config_class=Config):
     # Basic logging setup
     logging.basicConfig(level=logging.INFO)
     app.logger.info("Sklio backend starting…")
+
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
     # Init extensions
     db.init_app(app)

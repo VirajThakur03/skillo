@@ -3,7 +3,8 @@ import os
 from PIL import Image
 import pytesseract
 from pdf2image import convert_from_path
-
+import cv2
+import numpy as np
 
 def extract_text(file_path):
     if not os.path.exists(file_path):
@@ -42,3 +43,43 @@ def validate_document(text, doc_type):
         return bool(re.search(r"[A-Z]\d{7}", text))
 
     return True
+
+
+def is_blurry(file_path, threshold=100):
+    # File does not exist
+    if not os.path.exists(file_path):
+        return False
+
+    img = cv2.imread(file_path)
+
+    # 🚨 CRITICAL FIX
+    if img is None:
+        # Not an image (PDF / corrupted / unsupported)
+        return False
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+
+    return variance < threshold
+
+
+def is_screenshot(file_path):
+    if not os.path.exists(file_path):
+        return False
+
+    img = cv2.imread(file_path)
+
+    # ✅ VERY IMPORTANT CHECK
+    if img is None:
+        # Not an image (PDF / unsupported / corrupted)
+        return False
+
+    h, w = img.shape[:2]
+
+    # Screenshot heuristic (example)
+    aspect_ratio = w / h if h else 0
+
+    if aspect_ratio > 1.6 and w > 800:
+        return True
+
+    return False

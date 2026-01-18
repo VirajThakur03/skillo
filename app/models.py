@@ -1,11 +1,14 @@
 # app/models.py
+
 from datetime import datetime
 import enum
+
+from sqlalchemy.dialects.postgresql import JSON
 from .extensions import db
 
 
 # ====================
-# ENUMS (MATCH DB)
+# ENUMS (MATCH DB EXACTLY)
 # ====================
 
 class RoleEnum(enum.Enum):
@@ -46,6 +49,9 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
+    # --------------------
+    # BASIC INFO
+    # --------------------
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(180), unique=True, index=True, nullable=False)
     phone = db.Column(db.String(30), unique=True, index=True, nullable=True)
@@ -53,56 +59,72 @@ class User(db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
 
     role = db.Column(
-        db.Enum(
-            RoleEnum,
-            name="roleenum",
-            # values_callable=lambda x: [e.value for e in x],
-        ),
+        db.Enum(RoleEnum, name="roleenum"),
         nullable=False,
         default=RoleEnum.SEEKER,
     )
 
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # --------------------
+    # TRUST / GAMIFICATION
+    # --------------------
+    trust_score = db.Column(db.Integer, default=0, nullable=False)
+    completed_jobs = db.Column(db.Integer, default=0, nullable=False)
+    badges = db.Column(JSON, default=list, nullable=True)
+    avg_response_seconds = db.Column(db.Integer, default=0)
+
+    # --------------------
+    # PROFILE
+    # --------------------
     bio = db.Column(db.Text, nullable=True)
 
-    # 📍 Location
     location = db.Column(db.String(255), nullable=True)
     latitude = db.Column(db.Float, nullable=True)
     longitude = db.Column(db.Float, nullable=True)
 
     rating = db.Column(db.Float, default=0.0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # ✅ Document verification
+    # --------------------
+    # DOCUMENT VERIFICATION
+    # --------------------
     verification_status = db.Column(
         db.Enum(
             VerificationStatus,
             name="verificationstatus",
-            values_callable=lambda x: [e.value for e in x],
+            create_type=False,   # ✅ enum already exists
         ),
         nullable=False,
         default=VerificationStatus.pending,
     )
 
     is_verified = db.Column(db.Boolean, default=False, nullable=False)
+
     document_filename = db.Column(db.String(512), nullable=True)
     document_type = db.Column(db.String(100), nullable=True)
     verification_notes = db.Column(db.Text, nullable=True)
 
-    # ✅ Video verification
+    # --------------------
+    # VIDEO VERIFICATION
+    # --------------------
     verification_video_filename = db.Column(db.String(512), nullable=True)
+
     verification_video_status = db.Column(
         db.Enum(
             VerificationStatus,
             name="verificationstatus",
-            values_callable=lambda x: [e.value for e in x],
+            create_type=False,  # ✅ reuse same enum
         ),
         nullable=False,
         default=VerificationStatus.pending,
     )
 
-    # 💰 Referral & Wallet
+    # --------------------
+    # REFERRAL & WALLET
+    # --------------------
     referral_code = db.Column(db.String(20), unique=True, index=True, nullable=True)
     referred_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
     wallet_balance = db.Column(db.Numeric(10, 2), default=0.00)
 
     referrer = db.relationship(
@@ -113,17 +135,16 @@ class User(db.Model):
         uselist=False,
     )
 
-    # 🏆 Gamification
-    badges = db.Column(db.JSON, nullable=True)
-    completed_jobs = db.Column(db.Integer, default=0)
-    avg_response_seconds = db.Column(db.Integer, default=0)
-
-    # 🚀 Featured / Boost
+    # --------------------
+    # FEATURED / BOOST
+    # --------------------
     is_featured = db.Column(db.Boolean, default=False)
     featured_until = db.Column(db.DateTime, nullable=True)
     boost_until = db.Column(db.DateTime, nullable=True)
 
-    # Relationships
+    # --------------------
+    # RELATIONSHIPS
+    # --------------------
     skills = db.relationship(
         "Skill",
         back_populates="provider",
@@ -139,7 +160,6 @@ class User(db.Model):
     # --------------------
     # AUTH METHODS
     # --------------------
-
     def set_password(self, password, bcrypt):
         self.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
 
@@ -167,7 +187,7 @@ class Skill(db.Model):
     longitude = db.Column(db.Float, nullable=True)
 
     tags = db.Column(db.String(255), nullable=True)
-    availability = db.Column(db.JSON, nullable=True)
+    availability = db.Column(JSON, nullable=True)
 
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -195,21 +215,13 @@ class Booking(db.Model):
     currency = db.Column(db.String(10), default="INR")
 
     status = db.Column(
-        db.Enum(
-            BookingStatus,
-            name="bookingstatus",
-            values_callable=lambda x: [e.value for e in x],
-        ),
+        db.Enum(BookingStatus, name="bookingstatus"),
         nullable=False,
         default=BookingStatus.PENDING,
     )
 
     payment_status = db.Column(
-        db.Enum(
-            PaymentStatus,
-            name="paymentstatus",
-            values_callable=lambda x: [e.value for e in x],
-        ),
+        db.Enum(PaymentStatus, name="paymentstatus"),
         nullable=False,
         default=PaymentStatus.NONE,
     )

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -6,31 +6,23 @@ ENV PYTHONPATH=/app
 
 WORKDIR /app
 
-# =========================
-# SYSTEM DEPENDENCIES
-# =========================
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    gcc \
+# ================= SYSTEM DEPENDENCIES =================
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1 \ 
     tesseract-ocr \
     poppler-utils \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# =========================
-# PYTHON DEPENDENCIES
-# =========================
 COPY requirements.txt /app/
 
 RUN pip install --upgrade pip \
- && pip install -r requirements.txt
+ && pip install --no-cache-dir -r requirements.txt
 
-# =========================
-# APP CODE
-# =========================
 COPY . /app
 
 EXPOSE 5000
-
 CMD ["python", "run.py"]
-

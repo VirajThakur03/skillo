@@ -1,6 +1,6 @@
 # app/routes/auth.py
 
-from flask import Blueprint, request, current_app
+from flask import Blueprint, jsonify, request, current_app
 from ..extensions import db, bcrypt
 from ..models import User, RoleEnum, VerificationStatus
 from ..config import Config
@@ -10,7 +10,21 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
 )
-from app.verify.document_verify import extract_text, validate_document
+# 🔥 OCR + FAKE CHECKS
+from app.verify.document_verify import (
+    extract_text,
+    is_blurry,
+    is_screenshot,
+)
+
+from app.utils import compute_badges
+from app.verify.face_verify import (
+    extract_and_save_document_face,
+    load_document_face,
+    extract_video_faces,
+    faces_match,
+)
+
 from werkzeug.utils import secure_filename
 import os
 import random
@@ -202,6 +216,7 @@ def me():
 def upload_document():
     user = User.query.get(int(get_jwt_identity()))
 
+    # ------------------ BASIC CHECKS ------------------
     if not user:
         return {"error": "unauthenticated"}, 401
 
@@ -220,6 +235,7 @@ def upload_document():
     if not allowed_file(file.filename):
         return {"error": "unsupported file type"}, 400
 
+    # ------------------ SAVE FILE ------------------
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     os.makedirs(upload_folder, exist_ok=True)
 
@@ -228,47 +244,78 @@ def upload_document():
     file_path = os.path.join(upload_folder, save_name)
     file.save(file_path)
 
-    # ---------- OCR ----------
+    # ------------------ FAKE DOCUMENT CHECKS ------------------
+    if not file.filename.lower().endswith(".pdf"):
+        if is_blurry(file_path):
+            return {"error": "Document image too blurry"}, 400
+
+        if is_screenshot(file_path):
+            return {"error": "Screenshots are not allowed"}, 400
+
+    # ------------------ OCR ------------------
     text = extract_text(file_path)
 
-    if not text.strip():
-        return {"error": "No readable text found"}, 400
+    if not text or not text.strip():
+        return {
+            "error": "No readable text found. Upload a clear original document."
+        }, 400
 
-    import re
-
+    text = text.lower()
     is_valid = False
 
+    # ------------------ VALIDATION RULES ------------------
     if doc_type == "aadhaar":
         is_valid = bool(re.search(r"\b\d{4}\s?\d{4}\s?\d{4}\b", text))
 
     elif doc_type == "passport":
-        is_valid = bool(re.search(r"\b[A-Z][0-9]{7}\b", text))
+        is_valid = bool(re.search(r"\b[a-z][0-9]{7}\b", text))
 
     elif doc_type in ["driving license", "driving licence"]:
-        is_valid = bool(re.search(r"\b[A-Z]{2}\d{2}\s?\d{11}\b", text))
+        is_valid = bool(re.search(r"\b[a-z]{2}\d{2}\s?\d{11}\b", text))
 
     elif doc_type == "other":
         is_valid = True
 
-    if not is_valid:
-        return {"error": "Invalid document image"}, 400
+    else:
+        return {"error": "unsupported document type"}, 400
 
-    # ---------- SAVE ----------
+    if not is_valid:
+        return {
+            "error": "Invalid document image. Upload a clear original document."
+        }, 400
+
+    # ------------------ EXTRACT & SAVE DOCUMENT FACE ------------------
+    doc_face_path = os.path.join(
+        upload_folder,
+        f"user_{user.id}_doc_face.jpg"
+    )
+
+    doc_face_saved = extract_and_save_document_face(
+    file_path,
+    doc_face_path
+)
+
+    # ⚠️ DO NOT FAIL if face not found
+    if not doc_face_saved:
+        user.verification_notes = "Face not detected in document (allowed)"
+
+    # ------------------ UPDATE USER ------------------
     user.document_filename = save_name
     user.document_type = doc_type
     user.verification_status = VerificationStatus.document_verified
     user.verification_video_status = VerificationStatus.pending
+    user.verification_notes = "Document verified successfully"
     user.is_verified = False
 
     db.session.commit()
 
+    # ------------------ RESPONSE ------------------
     return {
-        "message": "Document verified",
+        "message": "Document verified successfully",
         "next": "face_verification"
     }, 201
 
-
-
+    
 
 # ==========================
 # UPLOAD VERIFICATION VIDEO
@@ -278,6 +325,12 @@ def upload_document():
 def upload_verification_video():
     user = User.query.get(int(get_jwt_identity()))
 
+    # --------------------
+    # BASIC CHECKS
+    # --------------------
+    if not user:
+        return {"error": "unauthenticated"}, 401
+
     if user.verification_status != VerificationStatus.document_verified:
         return {"error": "document verification required"}, 400
 
@@ -285,22 +338,61 @@ def upload_verification_video():
     if not file:
         return {"error": "video required"}, 400
 
+    # --------------------
+    # SAVE VIDEO
+    # --------------------
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     os.makedirs(upload_folder, exist_ok=True)
 
-    filename = secure_filename(file.filename)
-    save_name = f"user_{user.id}_face_{int(time.time())}_{filename}"
-    file.save(os.path.join(upload_folder, save_name))
+    video_name = f"user_{user.id}_face.mp4"
+    video_path = os.path.join(upload_folder, video_name)
+    file.save(video_path)
 
-    user.verification_video_filename = save_name
+    # --------------------
+    # LOAD DOCUMENT FACE
+    # --------------------
+    doc_face_path = os.path.join(
+        upload_folder,
+        f"user_{user.id}_doc_face.jpg"
+    )
+
+    doc_face = load_document_face(doc_face_path)
+    if doc_face is None:
+        # Allow video-only verification
+        user.verification_notes = "Video face verified (doc face missing)"
+
+
+    # --------------------
+    # EXTRACT VIDEO FACES
+    # --------------------
+    video_faces = extract_video_faces(video_path)
+
+    if not video_faces:
+        return {"error": "No face detected in video"}, 400
+
+    # --------------------
+    # MATCH
+    # --------------------
+    if not faces_match(doc_face, video_faces):
+        user.verification_status = VerificationStatus.rejected
+        user.verification_notes = "Face mismatch (LBPH multi-frame)"
+        db.session.commit()
+        return {"error": "Face does not match document"}, 400
+
+    # --------------------
+    # VERIFIED
+    # --------------------
+    user.verification_video_filename = video_name
     user.verification_status = VerificationStatus.face_verified
+    user.verification_notes = "Face verified successfully"
 
     db.session.commit()
 
     return {
-        "message": "Face verification uploaded",
+        "message": "Face verified successfully",
         "next": "location"
     }, 201
+
 
 # ==========================
 # UPLOAD LOCATION CONFIRMATION
@@ -310,16 +402,42 @@ def upload_verification_video():
 def confirm_location():
     user = User.query.get(int(get_jwt_identity()))
 
+    if not user:
+        return {"error": "unauthenticated"}, 401
+
+    # 🔐 Must complete face verification first
     if user.verification_status != VerificationStatus.face_verified:
         return {"error": "face verification required"}, 400
 
     data = request.get_json() or {}
-    user.latitude = data.get("latitude")
-    user.longitude = data.get("longitude")
 
+    lat = data.get("latitude")
+    lon = data.get("longitude")
+
+    if lat is None or lon is None:
+        return {"error": "location required"}, 400
+
+    # 📍 Save location
+    user.latitude = lat
+    user.longitude = lon
+
+    # ✅ Final verification state
     user.verification_status = VerificationStatus.completed
     user.is_verified = True
 
+    # ⭐ Trust score (increment only once)
+    if not user.trust_score:
+        user.trust_score = 0
+
+    user.trust_score += 30
+
+    # 🏅 Assign badges
+    user.badges = compute_badges(user)
+
     db.session.commit()
 
-    return {"message": "Verification completed"}, 200
+    return {
+        "message": "Verification completed",
+        "trust_score": user.trust_score,
+        "badges": user.badges
+    }, 200

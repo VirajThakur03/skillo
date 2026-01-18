@@ -128,7 +128,7 @@ export function clearToken() {
 
 export function logout() {
   clearToken();
-  window.location.href = '/demo_login';
+  window.location.replace('/demo_login');
 }
 
 // ================== FETCH HELPERS ==================
@@ -140,11 +140,18 @@ export async function authFetch(path, opts = {}) {
     opts.headers['Authorization'] = 'Bearer ' + token;
   }
 
-  const res = await fetch(path, opts);
-  const data = await res.json().catch(() => ({}));
+  let res, data = {};
+  try {
+    res = await fetch(path, opts);
+    data = await res.json().catch(() => ({}));
+  } catch (err) {
+    console.error('Network error:', err);
+    return { ok: false, data: { error: 'Network error' } };
+  }
 
   if (res.status === 401) {
     clearToken();
+    window.location.replace('/demo_login');
   }
 
   return { ok: res.ok, data };
@@ -157,7 +164,9 @@ export async function getCurrentUser(force = false) {
     if (cached) {
       try {
         return JSON.parse(cached);
-      } catch {}
+      } catch {
+        localStorage.removeItem(USER_KEY);
+      }
     }
   }
 
@@ -169,6 +178,7 @@ export async function getCurrentUser(force = false) {
     localStorage.setItem(USER_KEY, JSON.stringify(res.data));
     return res.data;
   }
+
   return null;
 }
 
@@ -188,7 +198,7 @@ export function getLocation(timeout = 10000) {
   });
 }
 
-// ================== GLOBAL PROVIDER VERIFICATION GUARD ==================
+// ================== PROVIDER VERIFICATION GUARD ==================
 document.addEventListener('DOMContentLoaded', async () => {
   const token = getToken();
   if (!token) return;
@@ -198,9 +208,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const path = window.location.pathname;
   const status = user.verification_status;
+  const role = user.role;
 
-  // 🔐 PROVIDER VERIFICATION FLOW (SINGLE SOURCE OF TRUTH)
-  if (user.role === 'PROVIDER') {
+  /*
+    ✅ SINGLE SOURCE OF TRUTH (BACKEND → FRONTEND)
+    status values:
+    - pending
+    - document_verified
+    - face_verified
+    - completed
+    - rejected (allowed retry)
+  */
+
+  if (role === 'PROVIDER') {
+
+    // 🚫 HARD BLOCK: rejected → retry document
+    if (
+      status === 'rejected' &&
+      path !== '/provider_verification'
+    ) {
+      window.location.replace('/provider_verification');
+      return;
+    }
 
     // STEP 1 → DOCUMENT
     if (
@@ -229,10 +258,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // STEP 4 → VERIFIED → HOME
-    if (status === 'completed') {
-      // allowed everywhere
-    }
+    // STEP 4 → COMPLETED
+    // completed → allow everywhere
   }
 
   // ================== AUTH BAR ==================
