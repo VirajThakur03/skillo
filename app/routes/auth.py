@@ -123,7 +123,7 @@ def register():
         # 🔐 VERIFICATION FLAGS (CRITICAL)
         "is_verified": user.is_verified,
         "verification_status": user.verification_status.value,
-        "verification_video_status": user.verification_video_status.value,
+        # "verification_video_status": user.verification_video_status.value,
 
         # optional info
         "location": user.location,
@@ -157,27 +157,27 @@ def login():
     refresh = create_refresh_token(identity=str(user.id))
 
     return {
-    "access_token": access,
-    "refresh_token": refresh,
-    "user": {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "role": user.role.value,
+        "access_token": access,
+        "refresh_token": refresh,
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role.value,
 
-        # 🔐 VERIFICATION FLAGS (CRITICAL)
-        "is_verified": user.is_verified,
-        "verification_status": user.verification_status.value,
-        "verification_video_status": user.verification_video_status.value,
+            # 🔐 VERIFICATION (SINGLE SOURCE OF TRUTH)
+            "verification_status": user.verification_status.value,
+            "is_verified": user.is_verified,
 
-        # optional info
-        "location": user.location,
-        "latitude": user.latitude,
-        "longitude": user.longitude,
-        "referral_code": user.referral_code,
-        "wallet_balance": str(user.wallet_balance or 0),
-    },
-}
+            # optional info
+            "location": user.location,
+            "latitude": user.latitude,
+            "longitude": user.longitude,
+            "referral_code": user.referral_code,
+            "wallet_balance": str(user.wallet_balance or 0),
+        },
+    }, 200
+
 
 
 # ==========================
@@ -186,8 +186,7 @@ def login():
 @auth_bp.route("/me", methods=["GET"])
 @jwt_required()
 def me():
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    user = User.query.get(int(get_jwt_identity()))
 
     if not user:
         return {"error": "not found"}, 404
@@ -197,15 +196,18 @@ def me():
         "name": user.name,
         "email": user.email,
         "role": user.role.value,
+
+        # 🔐 SINGLE SOURCE OF TRUTH
+        "verification_status": user.verification_status.value,
+        "is_verified": user.is_verified,
+
+        # optional
         "location": user.location,
         "latitude": user.latitude,
         "longitude": user.longitude,
-        "is_verified": user.is_verified,
-        "verification_status": user.verification_status.value,
-        "verification_video_status": user.verification_video_status.value,
         "referral_code": user.referral_code,
         "wallet_balance": str(user.wallet_balance or 0),
-    }
+    }, 200
 
 
 # ==========================
@@ -245,7 +247,9 @@ def upload_document():
     file.save(file_path)
 
     # ------------------ FAKE DOCUMENT CHECKS ------------------
-    if not file.filename.lower().endswith(".pdf"):
+    is_pdf = file.filename.lower().endswith(".pdf")
+
+    if not is_pdf:
         if is_blurry(file_path):
             return {"error": "Document image too blurry"}, 400
 
@@ -285,26 +289,29 @@ def upload_document():
         }, 400
 
     # ------------------ EXTRACT & SAVE DOCUMENT FACE ------------------
-    doc_face_path = os.path.join(
-        upload_folder,
-        f"user_{user.id}_doc_face.jpg"
-    )
+    doc_face_saved = False
 
-    doc_face_saved = extract_and_save_document_face(
-    file_path,
-    doc_face_path
-)
+    if not is_pdf:
+        doc_face_path = os.path.join(
+            upload_folder,
+            f"user_{user.id}_doc_face.jpg"
+        )
 
-    # ⚠️ DO NOT FAIL if face not found
+        doc_face_saved = extract_and_save_document_face(
+            file_path,
+            doc_face_path
+        )
+
+    # ⚠️ DO NOT FAIL IF FACE NOT FOUND
     if not doc_face_saved:
         user.verification_notes = "Face not detected in document (allowed)"
+    else:
+        user.verification_notes = "Document face extracted successfully"
 
     # ------------------ UPDATE USER ------------------
     user.document_filename = save_name
     user.document_type = doc_type
     user.verification_status = VerificationStatus.document_verified
-    user.verification_video_status = VerificationStatus.pending
-    user.verification_notes = "Document verified successfully"
     user.is_verified = False
 
     db.session.commit()
@@ -315,7 +322,55 @@ def upload_document():
         "next": "face_verification"
     }, 201
 
-    
+# ==========================
+# UPLOAD SELFIE
+# ==========================
+@auth_bp.route("/upload_selfie", methods=["POST"])
+@jwt_required()
+def upload_selfie():
+    user = User.query.get(int(get_jwt_identity()))
+
+    # --------------------
+    # BASIC CHECKS
+    # --------------------
+    if not user:
+        return {"error": "unauthenticated"}, 401
+
+    if user.verification_status != VerificationStatus.document_verified:
+        return {"error": "document verification required"}, 400
+
+    file = request.files.get("file")
+    if not file:
+        return {"error": "selfie image required"}, 400
+
+    # --------------------
+    # SAVE SELFIE
+    # --------------------
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+
+    selfie_name = f"user_{user.id}_selfie.jpg"
+    selfie_path = os.path.join(upload_folder, selfie_name)
+    file.save(selfie_path)
+
+    # --------------------
+    # FACE DETECTION CHECK
+    # --------------------
+    face = extract_face_from_image(selfie_path)
+    if face is None:
+        return {"error": "No clear face detected in selfie"}, 400
+
+    # --------------------
+    # SAVE USER STATE
+    # --------------------
+    user.selfie_filename = selfie_name
+    user.verification_notes = "Selfie captured successfully"
+    db.session.commit()
+
+    return {
+        "message": "Selfie uploaded successfully",
+        "next": "video_verification"
+    }, 201
 
 # ==========================
 # UPLOAD VERIFICATION VIDEO
@@ -349,18 +404,33 @@ def upload_verification_video():
     file.save(video_path)
 
     # --------------------
-    # LOAD DOCUMENT FACE
+    # LOAD REFERENCE FACE
+    # Priority: Document → Selfie
     # --------------------
+    reference_face = None
+    reference_source = None
+
+    # 1️⃣ Document face (if extracted earlier)
     doc_face_path = os.path.join(
         upload_folder,
         f"user_{user.id}_doc_face.jpg"
     )
 
-    doc_face = load_document_face(doc_face_path)
-    if doc_face is None:
-        # Allow video-only verification
-        user.verification_notes = "Video face verified (doc face missing)"
+    if os.path.exists(doc_face_path):
+        reference_face = load_document_face(doc_face_path)
+        reference_source = "document"
 
+    # 2️⃣ Selfie fallback (REQUIRED for PDF docs)
+    if reference_face is None and getattr(user, "selfie_filename", None):
+        selfie_path = os.path.join(upload_folder, user.selfie_filename)
+        reference_face = extract_face_from_image(selfie_path)
+        reference_source = "selfie"
+
+    # ❌ No reference face → stop
+    if reference_face is None:
+        return {
+            "error": "Selfie required for PDF or no-face documents"
+        }, 400
 
     # --------------------
     # EXTRACT VIDEO FACES
@@ -371,20 +441,25 @@ def upload_verification_video():
         return {"error": "No face detected in video"}, 400
 
     # --------------------
-    # MATCH
+    # FACE MATCH (LBPH – beard safe)
     # --------------------
-    if not faces_match(doc_face, video_faces):
+    if not faces_match(reference_face, video_faces):
         user.verification_status = VerificationStatus.rejected
-        user.verification_notes = "Face mismatch (LBPH multi-frame)"
+        user.verification_notes = (
+            f"Face mismatch ({reference_source} vs video)"
+        )
         db.session.commit()
-        return {"error": "Face does not match document"}, 400
+
+        return {"error": "Face does not match reference"}, 400
 
     # --------------------
     # VERIFIED
     # --------------------
     user.verification_video_filename = video_name
     user.verification_status = VerificationStatus.face_verified
-    user.verification_notes = "Face verified successfully"
+    user.verification_notes = (
+        f"Face verified successfully ({reference_source})"
+    )
 
     db.session.commit()
 
@@ -392,6 +467,7 @@ def upload_verification_video():
         "message": "Face verified successfully",
         "next": "location"
     }, 201
+
 
 
 # ==========================

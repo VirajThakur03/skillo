@@ -137,15 +137,14 @@ export async function authFetch(path, opts = {}) {
   const token = getToken();
 
   if (token) {
-    opts.headers['Authorization'] = 'Bearer ' + token;
+    opts.headers.Authorization = 'Bearer ' + token;
   }
 
   let res, data = {};
   try {
     res = await fetch(path, opts);
     data = await res.json().catch(() => ({}));
-  } catch (err) {
-    console.error('Network error:', err);
+  } catch (e) {
     return { ok: false, data: { error: 'Network error' } };
   }
 
@@ -211,36 +210,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   const role = user.role;
 
   /*
-    ✅ SINGLE SOURCE OF TRUTH (BACKEND → FRONTEND)
-    status values:
-    - pending
-    - document_verified
-    - face_verified
-    - completed
-    - rejected (allowed retry)
+    Verification status:
+    pending → document_verified → face_verified → completed
+    rejected → retry document
   */
 
   if (role === 'PROVIDER') {
 
-    // 🚫 HARD BLOCK: rejected → retry document
-    if (
-      status === 'rejected' &&
-      path !== '/provider_verification'
-    ) {
+    if (status === 'rejected' && path !== '/provider_verification') {
       window.location.replace('/provider_verification');
       return;
     }
 
-    // STEP 1 → DOCUMENT
-    if (
-      status === 'pending' &&
-      path !== '/provider_verification'
-    ) {
+    if (status === 'pending' && path !== '/provider_verification') {
       window.location.replace('/provider_verification');
       return;
     }
 
-    // STEP 2 → FACE VIDEO
     if (
       status === 'document_verified' &&
       path !== '/provider_verification_video'
@@ -249,7 +235,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // STEP 3 → LOCATION
     if (
       status === 'face_verified' &&
       path !== '/confirm_location'
@@ -257,9 +242,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.location.replace('/confirm_location');
       return;
     }
-
-    // STEP 4 → COMPLETED
-    // completed → allow everywhere
   }
 
   // ================== AUTH BAR ==================

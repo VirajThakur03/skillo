@@ -59,7 +59,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
 
     role = db.Column(
-        db.Enum(RoleEnum, name="roleenum"),
+        db.Enum(RoleEnum, name="roleenum", create_type=False),
         nullable=False,
         default=RoleEnum.SEEKER,
     )
@@ -86,13 +86,13 @@ class User(db.Model):
     rating = db.Column(db.Float, default=0.0)
 
     # --------------------
-    # DOCUMENT VERIFICATION
+    # VERIFICATION (SINGLE SOURCE OF TRUTH)
     # --------------------
     verification_status = db.Column(
         db.Enum(
             VerificationStatus,
             name="verificationstatus",
-            create_type=False,   # ✅ enum already exists
+            create_type=False,
         ),
         nullable=False,
         default=VerificationStatus.pending,
@@ -100,24 +100,23 @@ class User(db.Model):
 
     is_verified = db.Column(db.Boolean, default=False, nullable=False)
 
+    # --------------------
+    # DOCUMENT
+    # --------------------
     document_filename = db.Column(db.String(512), nullable=True)
     document_type = db.Column(db.String(100), nullable=True)
-    verification_notes = db.Column(db.Text, nullable=True)
 
     # --------------------
-    # VIDEO VERIFICATION
+    # SELFIE (OPTION B FALLBACK)
+    # --------------------
+    selfie_filename = db.Column(db.String(512), nullable=True)
+
+    # --------------------
+    # FACE VIDEO
     # --------------------
     verification_video_filename = db.Column(db.String(512), nullable=True)
 
-    verification_video_status = db.Column(
-        db.Enum(
-            VerificationStatus,
-            name="verificationstatus",
-            create_type=False,  # ✅ reuse same enum
-        ),
-        nullable=False,
-        default=VerificationStatus.pending,
-    )
+    verification_notes = db.Column(db.Text, nullable=True)
 
     # --------------------
     # REFERRAL & WALLET
@@ -215,13 +214,13 @@ class Booking(db.Model):
     currency = db.Column(db.String(10), default="INR")
 
     status = db.Column(
-        db.Enum(BookingStatus, name="bookingstatus"),
+        db.Enum(BookingStatus, name="bookingstatus", create_type=False),
         nullable=False,
         default=BookingStatus.PENDING,
     )
 
     payment_status = db.Column(
-        db.Enum(PaymentStatus, name="paymentstatus"),
+        db.Enum(PaymentStatus, name="paymentstatus", create_type=False),
         nullable=False,
         default=PaymentStatus.NONE,
     )
