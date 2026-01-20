@@ -144,7 +144,7 @@ export async function authFetch(path, opts = {}) {
   try {
     res = await fetch(path, opts);
     data = await res.json().catch(() => ({}));
-  } catch (e) {
+  } catch {
     return { ok: false, data: { error: 'Network error' } };
   }
 
@@ -181,7 +181,7 @@ export async function getCurrentUser(force = false) {
   return null;
 }
 
-// ================== GEOLOCATION ==================
+// ================== GEOLOCATION (REQUIRED EXPORT) ==================
 export function getLocation(timeout = 10000) {
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null);
@@ -199,42 +199,84 @@ export function getLocation(timeout = 10000) {
 
 // ================== PROVIDER VERIFICATION GUARD ==================
 document.addEventListener('DOMContentLoaded', async () => {
+  const path = window.location.pathname;
+
+  // 🚫 DO NOT RUN GUARD ON PUBLIC PAGES
+  if (
+    path === '/' ||
+    path === '/login' ||
+    path === '/demo_login' ||
+    path === '/demo-login'
+  ) {
+    return;
+  }
+
   const token = getToken();
   if (!token) return;
 
   const user = await getCurrentUser(true);
   if (!user) return;
 
-  const path = window.location.pathname;
+  const role   = user.role;
   const status = user.verification_status;
-  const role = user.role;
+
+  // 🔥 SINGLE SOURCE OF TRUTH (FROM BACKEND /me)
+  const needsSelfie = user.requires_selfie === true;
 
   /*
-    Verification status:
-    pending → document_verified → face_verified → completed
-    rejected → retry document
+    ✅ FINAL PROVIDER VERIFICATION FLOW
+
+    pending
+      → /provider_verification
+
+    document_verified + requires_selfie
+      → /provider_verification_selfie
+
+    document_verified + !requires_selfie
+      → /provider_verification_video
+
+    face_verified
+      → /confirm_location
+
+    rejected
+      → /provider_verification
   */
 
   if (role === 'PROVIDER') {
 
+    // ❌ Rejected → restart
     if (status === 'rejected' && path !== '/provider_verification') {
       window.location.replace('/provider_verification');
       return;
     }
 
+    // 🟡 Step 1: Document
     if (status === 'pending' && path !== '/provider_verification') {
       window.location.replace('/provider_verification');
       return;
     }
 
+    // 🟡 Step 2: Selfie (PDF or no-face docs)
     if (
       status === 'document_verified' &&
+      needsSelfie &&
+      path !== '/provider_verification_selfie'
+    ) {
+      window.location.replace('/provider_verification_selfie');
+      return;
+    }
+
+    // 🟡 Step 3: Video
+    if (
+      status === 'document_verified' &&
+      !needsSelfie &&
       path !== '/provider_verification_video'
     ) {
       window.location.replace('/provider_verification_video');
       return;
     }
 
+    // 🟢 Step 4: Location
     if (
       status === 'face_verified' &&
       path !== '/confirm_location'
@@ -242,6 +284,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.location.replace('/confirm_location');
       return;
     }
+
+    // ✅ completed → free access
   }
 
   // ================== AUTH BAR ==================

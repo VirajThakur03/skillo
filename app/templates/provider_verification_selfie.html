@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Selfie Verification | Sklio</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .card {
+      background: #020617;
+      padding: 24px;
+      width: 360px;
+      border-radius: 12px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    p {
+      font-size: 14px;
+      color: #94a3b8;
+      margin-bottom: 16px;
+    }
+
+    video, img {
+      width: 100%;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      background: #000;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .error {
+      color: #f87171;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .success {
+      color: #4ade80;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Selfie Verification</h2>
+  <p>
+    Your document did not contain a clear face.<br>
+    Please take a clear selfie.
+  </p>
+
+  <video id="video" autoplay playsinline></video>
+  <img id="preview" style="display:none" />
+
+  <button id="captureBtn">Capture Selfie</button>
+  <button id="uploadBtn" disabled>Upload Selfie</button>
+
+  <div id="msg"></div>
+</div>
+
+<script type="module">
+  import { authFetch } from "/static/js/main.js";
+
+  const video = document.getElementById("video");
+  const preview = document.getElementById("preview");
+  const captureBtn = document.getElementById("captureBtn");
+  const uploadBtn = document.getElementById("uploadBtn");
+  const msg = document.getElementById("msg");
+
+  let stream;
+  let blob;
+
+  // 🎥 Start camera
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+    } catch (e) {
+      msg.innerHTML = `<div class="error">Camera access denied</div>`;
+    }
+  }
+
+  startCamera();
+
+  // 📸 Capture frame
+  captureBtn.onclick = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    canvas.toBlob(b => {
+      blob = b;
+      preview.src = URL.createObjectURL(blob);
+      preview.style.display = "block";
+      video.style.display = "none";
+      uploadBtn.disabled = false;
+      msg.innerHTML = "";
+    }, "image/jpeg", 0.9);
+  };
+
+  // ⬆️ Upload selfie
+  uploadBtn.onclick = async () => {
+    uploadBtn.disabled = true;
+    msg.innerHTML = "Uploading...";
+
+    const form = new FormData();
+    form.append("file", blob, "selfie.jpg");
+
+    const res = await authFetch("/api/auth/upload_selfie", {
+      method: "POST",
+      body: form
+    });
+
+    if (!res.ok) {
+      msg.innerHTML = `<div class="error">${res.data.error || "Upload failed"}</div>`;
+      uploadBtn.disabled = false;
+      return;
+    }
+
+    msg.innerHTML = `<div class="success">Selfie uploaded. Redirecting...</div>`;
+
+    setTimeout(() => {
+      window.location.replace("/provider_verification_video");
+    }, 1000);
+  };
+</script>
+
+</body>
+</html>

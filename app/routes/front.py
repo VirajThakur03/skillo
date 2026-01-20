@@ -112,3 +112,10 @@ def chat_page(room):
 def provider_dashboard_page():
     return render_template("provider_dashboard.html")
 
+@front_bp.route("/provider_verification_selfie")
+def provider_verification_selfie():
+    return render_template("provider_verification_selfie.html")
+
+@front_bp.route("/confirm_location")
+def confirm_location_page():
+    return render_template("confirm_location.html")

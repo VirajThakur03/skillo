@@ -60,8 +60,11 @@
     });
     const data = await res.json();
     statusEl.innerText = JSON.stringify(data);
-    if(res.status === 201){
-      alert('Video uploaded, pending verification.');
+    if (res.ok) {
+      alert('Face verified successfully');
+
+      // ✅ REDIRECT TO LOCATION CONFIRMATION
+      window.location.href = '/confirm_location';
     }
   }
 

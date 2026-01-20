@@ -23,6 +23,7 @@ from app.verify.face_verify import (
     load_document_face,
     extract_video_faces,
     faces_match,
+    extract_face_from_image,   # ✅ ADD THIS
 )
 
 from werkzeug.utils import secure_filename
@@ -191,23 +192,36 @@ def me():
     if not user:
         return {"error": "not found"}, 404
 
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    doc_face_path = os.path.join(
+        upload_folder,
+        f"user_{user.id}_doc_face.jpg"
+    )
+
+    requires_selfie = (
+        user.verification_status == VerificationStatus.document_verified
+        and not os.path.exists(doc_face_path)
+        and not user.selfie_filename
+    )
+
     return {
         "id": user.id,
         "name": user.name,
         "email": user.email,
         "role": user.role.value,
-
-        # 🔐 SINGLE SOURCE OF TRUTH
         "verification_status": user.verification_status.value,
         "is_verified": user.is_verified,
 
-        # optional
+        # 🔥 NEW FLAG
+        "requires_selfie": requires_selfie,
+
         "location": user.location,
         "latitude": user.latitude,
         "longitude": user.longitude,
         "referral_code": user.referral_code,
         "wallet_balance": str(user.wallet_balance or 0),
     }, 200
+
 
 
 # ==========================
@@ -246,9 +260,10 @@ def upload_document():
     file_path = os.path.join(upload_folder, save_name)
     file.save(file_path)
 
-    # ------------------ FAKE DOCUMENT CHECKS ------------------
+    # ------------------ FILE TYPE ------------------
     is_pdf = file.filename.lower().endswith(".pdf")
 
+    # ------------------ IMAGE QUALITY CHECKS ------------------
     if not is_pdf:
         if is_blurry(file_path):
             return {"error": "Document image too blurry"}, 400
@@ -267,7 +282,7 @@ def upload_document():
     text = text.lower()
     is_valid = False
 
-    # ------------------ VALIDATION RULES ------------------
+    # ------------------ DOCUMENT VALIDATION ------------------
     if doc_type == "aadhaar":
         is_valid = bool(re.search(r"\b\d{4}\s?\d{4}\s?\d{4}\b", text))
 
@@ -288,7 +303,7 @@ def upload_document():
             "error": "Invalid document image. Upload a clear original document."
         }, 400
 
-    # ------------------ EXTRACT & SAVE DOCUMENT FACE ------------------
+    # ------------------ FACE EXTRACTION (OPTIONAL) ------------------
     doc_face_saved = False
 
     if not is_pdf:
@@ -302,16 +317,17 @@ def upload_document():
             doc_face_path
         )
 
-    # ⚠️ DO NOT FAIL IF FACE NOT FOUND
-    if not doc_face_saved:
-        user.verification_notes = "Face not detected in document (allowed)"
+    # ⚠️ IMPORTANT: NEVER FAIL DOCUMENT STAGE DUE TO FACE
+    if doc_face_saved:
+        verification_notes = "Document verified, face extracted"
     else:
-        user.verification_notes = "Document face extracted successfully"
+        verification_notes = "Document verified (no face found, selfie required later)"
 
     # ------------------ UPDATE USER ------------------
     user.document_filename = save_name
     user.document_type = doc_type
     user.verification_status = VerificationStatus.document_verified
+    user.verification_notes = verification_notes
     user.is_verified = False
 
     db.session.commit()
@@ -330,9 +346,6 @@ def upload_document():
 def upload_selfie():
     user = User.query.get(int(get_jwt_identity()))
 
-    # --------------------
-    # BASIC CHECKS
-    # --------------------
     if not user:
         return {"error": "unauthenticated"}, 401
 
@@ -343,9 +356,6 @@ def upload_selfie():
     if not file:
         return {"error": "selfie image required"}, 400
 
-    # --------------------
-    # SAVE SELFIE
-    # --------------------
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     os.makedirs(upload_folder, exist_ok=True)
 
@@ -353,24 +363,21 @@ def upload_selfie():
     selfie_path = os.path.join(upload_folder, selfie_name)
     file.save(selfie_path)
 
-    # --------------------
-    # FACE DETECTION CHECK
-    # --------------------
     face = extract_face_from_image(selfie_path)
     if face is None:
         return {"error": "No clear face detected in selfie"}, 400
 
-    # --------------------
-    # SAVE USER STATE
-    # --------------------
+    # ✅ SAVE SELFIE REFERENCE
     user.selfie_filename = selfie_name
     user.verification_notes = "Selfie captured successfully"
+
     db.session.commit()
 
     return {
         "message": "Selfie uploaded successfully",
         "next": "video_verification"
     }, 201
+
 
 # ==========================
 # UPLOAD VERIFICATION VIDEO

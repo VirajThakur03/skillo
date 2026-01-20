@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card glass">
+  <h2>Confirm Your Location</h2>
+  <p class="muted">
+    We need your current location to complete verification.
+    This will be saved to your profile.
+  </p>
+
+  <div style="margin-top:16px;">
+    <button class="btn neon" id="locBtn">Share My Location</button>
+  </div>
+
+  <p id="status" class="muted" style="margin-top:12px;"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusEl = document.getElementById('status');
+const btn = document.getElementById('locBtn');
+
+btn.addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    alert('Geolocation not supported');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = 'Fetching location…';
+
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const payload = {
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude
+    };
+
+    const token = localStorage.getItem('sklio_access_token');
+    if (!token) {
+      alert('Please login again');
+      return;
+    }
+
+    const res = await fetch('/api/auth/confirm_location', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    statusEl.innerText = JSON.stringify(data, null, 2);
+
+    if (res.ok) {
+      alert('Verification completed successfully 🎉');
+      window.location.href = '/provider/dashboard';
+    } else {
+      btn.disabled = false;
+      btn.innerText = 'Share My Location';
+      alert(data.error || 'Location verification failed');
+    }
+  }, err => {
+    btn.disabled = false;
+    btn.innerText = 'Share My Location';
+    alert('Location error: ' + err.message);
+  }, {
+    enableHighAccuracy: true,
+    timeout: 10000
+  });
+});
+</script>
+{% endblock %}

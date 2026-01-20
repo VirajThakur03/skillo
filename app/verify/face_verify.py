@@ -51,6 +51,27 @@ def _detect_face(gray):
     return gray[y : y + int(h * 0.65), x : x + w]
 
 # =========================
+# FACE DETECTOR
+# =========================
+def extract_face_from_image(image_path):
+    """
+    Extract a single face from an image file (selfie / document fallback)
+    Returns grayscale face crop or None
+    """
+    if not image_path or not os.path.exists(image_path):
+        return None
+
+    img = cv2.imread(image_path)
+    if img is None:
+        return None
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    face = _detect_face(gray)
+
+    return face
+
+
+# =========================
 # DOCUMENT FACE (SAVE ONCE)
 # =========================
 def extract_and_save_document_face(doc_path, output_path):
