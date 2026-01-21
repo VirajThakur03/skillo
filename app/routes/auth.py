@@ -192,17 +192,7 @@ def me():
     if not user:
         return {"error": "not found"}, 404
 
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
-    doc_face_path = os.path.join(
-        upload_folder,
-        f"user_{user.id}_doc_face.jpg"
-    )
-
-    requires_selfie = (
-        user.verification_status == VerificationStatus.document_verified
-        and not os.path.exists(doc_face_path)
-        and not user.selfie_filename
-    )
+   
 
     return {
         "id": user.id,
@@ -213,7 +203,7 @@ def me():
         "is_verified": user.is_verified,
 
         # 🔥 NEW FLAG
-        "requires_selfie": requires_selfie,
+        "requires_selfie": user.requires_selfie,
 
         "location": user.location,
         "latitude": user.latitude,
@@ -319,9 +309,12 @@ def upload_document():
 
     # ⚠️ IMPORTANT: NEVER FAIL DOCUMENT STAGE DUE TO FACE
     if doc_face_saved:
+        user.requires_selfie = False
         verification_notes = "Document verified, face extracted"
     else:
-        verification_notes = "Document verified (no face found, selfie required later)"
+        user.requires_selfie = True
+        verification_notes = "Document verified (no face found, selfie required)"
+
 
     # ------------------ UPDATE USER ------------------
     user.document_filename = save_name
@@ -369,6 +362,7 @@ def upload_selfie():
 
     # ✅ SAVE SELFIE REFERENCE
     user.selfie_filename = selfie_name
+    user.requires_selfie = False   # ✅ THIS IS THE KEY
     user.verification_notes = "Selfie captured successfully"
 
     db.session.commit()

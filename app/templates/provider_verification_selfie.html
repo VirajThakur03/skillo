@@ -93,74 +93,96 @@
 </div>
 
 <script type="module">
-  import { authFetch } from "/static/js/main.js";
+import { authFetch } from "/static/js/main.js";
+import { getCurrentUser } from "/static/js/main.js";
 
-  const video = document.getElementById("video");
-  const preview = document.getElementById("preview");
-  const captureBtn = document.getElementById("captureBtn");
-  const uploadBtn = document.getElementById("uploadBtn");
-  const msg = document.getElementById("msg");
+// const user = await getCurrentUser(true);
+// if (!user || user.requires_selfie !== true) {
+//   window.location.replace("/provider_verification_video");
+// }
+const video = document.getElementById("video");
+const preview = document.getElementById("preview");
+const captureBtn = document.getElementById("captureBtn");
+const uploadBtn = document.getElementById("uploadBtn");
+const msg = document.getElementById("msg");
 
-  let stream;
-  let blob;
 
-  // 🎥 Start camera
-  async function startCamera() {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-    } catch (e) {
-      msg.innerHTML = `<div class="error">Camera access denied</div>`;
-    }
+let stream = null;
+let blob = null;
+
+// 🎥 Start / Restart camera
+async function startCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
   }
 
-  startCamera();
-
-  // 📸 Capture frame
-  captureBtn.onclick = () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
-
-    canvas.toBlob(b => {
-      blob = b;
-      preview.src = URL.createObjectURL(blob);
-      preview.style.display = "block";
-      video.style.display = "none";
-      uploadBtn.disabled = false;
-      msg.innerHTML = "";
-    }, "image/jpeg", 0.9);
-  };
-
-  // ⬆️ Upload selfie
-  uploadBtn.onclick = async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+    video.style.display = "block";
+    preview.style.display = "none";
     uploadBtn.disabled = true;
-    msg.innerHTML = "Uploading...";
+    blob = null;
+  } catch (e) {
+    msg.innerHTML = `<div class="error">Camera access denied</div>`;
+  }
+}
 
-    const form = new FormData();
-    form.append("file", blob, "selfie.jpg");
+startCamera();
 
-    const res = await authFetch("/api/auth/upload_selfie", {
-      method: "POST",
-      body: form
-    });
+// 📸 Capture selfie
+captureBtn.onclick = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-    if (!res.ok) {
-      msg.innerHTML = `<div class="error">${res.data.error || "Upload failed"}</div>`;
-      uploadBtn.disabled = false;
-      return;
-    }
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
 
-    msg.innerHTML = `<div class="success">Selfie uploaded. Redirecting...</div>`;
+  canvas.toBlob(b => {
+    blob = b;
+    preview.src = URL.createObjectURL(blob);
+    preview.style.display = "block";
+    video.style.display = "none";
+    uploadBtn.disabled = false;
+    msg.innerHTML = "";
+  }, "image/jpeg", 0.9);
+};
 
-    setTimeout(() => {
-      window.location.replace("/provider_verification_video");
-    }, 1000);
-  };
+// 🔁 RETAKE (same button toggles behavior)
+captureBtn.addEventListener("dblclick", () => {
+  startCamera();
+});
+
+// ⬆️ Upload selfie
+uploadBtn.onclick = async () => {
+  if (!blob) return;
+
+  uploadBtn.disabled = true;
+  msg.innerHTML = "Uploading selfie...";
+
+  const form = new FormData();
+  form.append("file", blob, "selfie.jpg");
+
+  const res = await authFetch("/api/auth/upload_selfie", {
+    method: "POST",
+    body: form
+  });
+
+  if (!res.ok) {
+    msg.innerHTML = `<div class="error">${res.data.error || "Upload failed"}</div>`;
+    uploadBtn.disabled = false;
+    return;
+  }
+
+  msg.innerHTML = `<div class="success">Selfie uploaded. Redirecting…</div>`;
+
+  setTimeout(() => {
+    window.location.replace("/provider_verification_video");
+  }, 800);
+};
 </script>
+
 
 </body>
 </html>

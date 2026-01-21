@@ -3,72 +3,183 @@
   <div class="card glass">
     <h2>Video Verification</h2>
     <p class="muted">
-      Record a 5-second selfie saying: <br>
+      Record a 5-second selfie saying:<br>
       <b>"Hi, my name is &lt;your name&gt; and I confirm my identity."</b>
     </p>
-    <video id="preview" autoplay playsinline style="width:100%; border-radius:12px; background:#000;"></video>
-    <div style="margin-top:10px;">
-      <button class="btn neon" id="startBtn">Start Recording</button>
+
+    <video
+      id="preview"
+      autoplay
+      playsinline
+      muted
+      style="width:100%; border-radius:12px; background:#000;"
+    ></video>
+
+    <div style="margin-top:12px;">
+      <button class="btn neon" id="recordBtn">Start Recording</button>
     </div>
-    <p id="status" class="muted"></p>
+
+    <p id="status" class="muted" style="margin-top:8px;"></p>
   </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let mediaRecorder;
+  let mediaRecorder = null;
+  let stream = null;
   let chunks = [];
-  const preview = document.getElementById('preview');
-  const statusEl = document.getElementById('status');
+  let recording = false;
+  let timer = null;
 
-  async function initCamera(){
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
+  const preview   = document.getElementById("preview");
+  const recordBtn = document.getElementById("recordBtn");
+  const statusEl  = document.getElementById("status");
+
+  // 🎥 Init / reset camera
+  async function initCamera() {
+    cleanup();
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+
       preview.srcObject = stream;
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: "video/webm;codecs=vp8,opus"
+      });
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
       mediaRecorder.onstop = uploadVideo;
-    }catch(e){
-      alert('Unable to access camera/mic: ' + e.message);
+
+    } catch (err) {
+      statusEl.innerText = "Camera / mic permission denied";
+      recordBtn.disabled = true;
     }
   }
 
-  async function startRecording(){
-    if(!mediaRecorder){
-      await initCamera();
+  // 🧹 Cleanup camera + timers
+  function cleanup() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
     }
-    chunks = [];
-    mediaRecorder.start();
-    statusEl.innerText = "Recording… 5 seconds";
-    setTimeout(()=> {
+
+    if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
-      statusEl.innerText = "Recording stopped. Uploading…";
-    }, 5000);
+    }
+
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+
+    mediaRecorder = null;
+    chunks = [];
+    recording = false;
   }
 
-  async function uploadVideo(){
-    const blob = new Blob(chunks, {type:'video/webm'});
+  // ⏺ Start recording (5 sec)
+  async function startRecording() {
+    if (recording) return;
+
+    await initCamera();
+
+    chunks = [];
+    recording = true;
+    recordBtn.disabled = true;
+    recordBtn.innerText = "Recording…";
+
+    let seconds = 5;
+    statusEl.innerText = `Recording… ${seconds}s`;
+
+    mediaRecorder.start();
+
+    timer = setInterval(() => {
+      seconds--;
+      statusEl.innerText = `Recording… ${seconds}s`;
+
+      if (seconds <= 0) {
+        clearInterval(timer);
+        timer = null;
+        mediaRecorder.stop();
+        statusEl.innerText = "Uploading video…";
+      }
+    }, 1000);
+  }
+
+  // ⬆️ Upload video
+  async function uploadVideo() {
+    recording = false;
+    recordBtn.disabled = true;
+
+    const blob = new Blob(chunks, { type: "video/webm" });
     const form = new FormData();
-    form.append('file', blob, 'verification.webm');
-    const token = localStorage.getItem('sklio_access_token');
-    if(!token){ alert('Please login as provider first'); return; }
+    form.append("file", blob, "verification.webm");
 
-    const res = await fetch('/api/auth/upload_verification_video', {
-      method:'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-      body: form
-    });
-    const data = await res.json();
-    statusEl.innerText = JSON.stringify(data);
-    if (res.ok) {
-      alert('Face verified successfully');
+    const token = localStorage.getItem("sklio_access_token");
+    if (!token) {
+      alert("Session expired. Please login again.");
+      return;
+    }
 
-      // ✅ REDIRECT TO LOCATION CONFIRMATION
-      window.location.href = '/confirm_location';
+    try {
+      const res = await fetch("/api/auth/upload_verification_video", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + token
+        },
+        body: form
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+
+        // 🔥 SPECIAL CASE: selfie is required
+        if (data.error === "Selfie required for PDF or no-face documents") {
+          cleanup();
+          statusEl.innerText = "Selfie required. Redirecting…";
+
+          // ⛔ remove this page from history
+          setTimeout(() => {
+            window.location.replace("/provider_verification_selfie");
+          }, 700);
+
+          return;
+        }
+
+        // ❌ Normal failure → allow retry
+        cleanup();
+        recordBtn.disabled = false;
+        recordBtn.innerText = "Retake Video";
+        statusEl.innerText = data.error || "Verification failed";
+        return;
+      }
+
+
+      statusEl.innerText = "Face verified successfully ✔";
+
+      // ✅ Prevent back-button leak
+      setTimeout(() => {
+        window.location.replace("/confirm_location");
+      }, 900);
+
+    } catch (err) {
+      cleanup();
+      recordBtn.disabled = false;
+      recordBtn.innerText = "Retake Video";
+      statusEl.innerText = "Network error. Please try again.";
     }
   }
 
-  document.getElementById('startBtn').addEventListener('click', startRecording);
-  initCamera();
+  recordBtn.addEventListener("click", startRecording);
 </script>
 {% endblock %}

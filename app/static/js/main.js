@@ -181,7 +181,7 @@ export async function getCurrentUser(force = false) {
   return null;
 }
 
-// ================== GEOLOCATION (REQUIRED EXPORT) ==================
+// ================== GEOLOCATION ==================
 export function getLocation(timeout = 10000) {
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null);
@@ -201,7 +201,7 @@ export function getLocation(timeout = 10000) {
 document.addEventListener('DOMContentLoaded', async () => {
   const path = window.location.pathname;
 
-  // 🚫 DO NOT RUN GUARD ON PUBLIC PAGES
+  // 🚫 PUBLIC / AUTH PAGES
   if (
     path === '/' ||
     path === '/login' ||
@@ -219,73 +219,74 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const role   = user.role;
   const status = user.verification_status;
-
-  // 🔥 SINGLE SOURCE OF TRUTH (FROM BACKEND /me)
   const needsSelfie = user.requires_selfie === true;
+  const isVerified  = user.is_verified === true;
 
-  /*
-    ✅ FINAL PROVIDER VERIFICATION FLOW
+  // ✅ Fully verified → allow everything
+  if (isVerified || status === 'completed') {
+    return;
+  }
 
-    pending
-      → /provider_verification
+  if (role !== 'PROVIDER') return;
 
-    document_verified + requires_selfie
-      → /provider_verification_selfie
+  // ==================================================
+  // 🔒 HARD LOCK 1: SELFIE PAGE (ABSOLUTE)
+  // ==================================================
+  if (path === '/provider_verification_selfie') {
+    return; // ⛔ NEVER redirect away from selfie page
+  }
 
-    document_verified + !requires_selfie
-      → /provider_verification_video
+  // ==================================================
+  // 🔒 HARD LOCK 2: VIDEO PAGE DURING SELFIE REQUIREMENT
+  // ==================================================
+  if (
+    status === 'document_verified' &&
+    needsSelfie === true &&
+    path === '/provider_verification_video'
+  ) {
+    window.location.replace('/provider_verification_selfie');
+    return;
+  }
 
-    face_verified
-      → /confirm_location
+  // ❌ Rejected → restart
+  if (status === 'rejected' && path !== '/provider_verification') {
+    window.location.replace('/provider_verification');
+    return;
+  }
 
-    rejected
-      → /provider_verification
-  */
+  // 🟡 Step 1: Document
+  if (status === 'pending' && path !== '/provider_verification') {
+    window.location.replace('/provider_verification');
+    return;
+  }
 
-  if (role === 'PROVIDER') {
+  // 🟡 Step 2: Selfie
+  if (
+    status === 'document_verified' &&
+    needsSelfie === true &&
+    path !== '/provider_verification_selfie'
+  ) {
+    window.location.replace('/provider_verification_selfie');
+    return;
+  }
 
-    // ❌ Rejected → restart
-    if (status === 'rejected' && path !== '/provider_verification') {
-      window.location.replace('/provider_verification');
-      return;
-    }
+  // 🟡 Step 3: Video
+  if (
+    status === 'document_verified' &&
+    needsSelfie === false &&
+    path !== '/provider_verification_video'
+  ) {
+    window.location.replace('/provider_verification_video');
+    return;
+  }
 
-    // 🟡 Step 1: Document
-    if (status === 'pending' && path !== '/provider_verification') {
-      window.location.replace('/provider_verification');
-      return;
-    }
-
-    // 🟡 Step 2: Selfie (PDF or no-face docs)
-    if (
-      status === 'document_verified' &&
-      needsSelfie &&
-      path !== '/provider_verification_selfie'
-    ) {
-      window.location.replace('/provider_verification_selfie');
-      return;
-    }
-
-    // 🟡 Step 3: Video
-    if (
-      status === 'document_verified' &&
-      !needsSelfie &&
-      path !== '/provider_verification_video'
-    ) {
-      window.location.replace('/provider_verification_video');
-      return;
-    }
-
-    // 🟢 Step 4: Location
-    if (
-      status === 'face_verified' &&
-      path !== '/confirm_location'
-    ) {
-      window.location.replace('/confirm_location');
-      return;
-    }
-
-    // ✅ completed → free access
+  // 🟢 Step 4: Location
+  if (
+    status === 'face_verified' &&
+    path !== '/confirm_location'
+  ) {
+    window.location.replace('/confirm_location');
+    return;
   }
 
   // ================== AUTH BAR ==================

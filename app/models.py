@@ -107,6 +107,12 @@ class User(db.Model):
     document_type = db.Column(db.String(100), nullable=True)
 
     # --------------------
+    # VERIFICATION FLOW FLAGS
+    # --------------------
+    requires_selfie = db.Column(db.Boolean, default=False, nullable=False)
+
+
+    # --------------------
     # SELFIE (OPTION B FALLBACK)
     # --------------------
     selfie_filename = db.Column(db.String(512), nullable=True)

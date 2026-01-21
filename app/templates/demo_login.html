@@ -96,21 +96,26 @@
     });
 
     const data = await res.json();
-    out.textContent = JSON.stringify(data, null, 2);
 
-    if (!res.ok || !data.access_token) return;
-
-    setToken(data.access_token);
-    localStorage.setItem('sklio_user', JSON.stringify(data.user));
-
-    // 🔐 PROVIDER ALWAYS STARTS WITH DOCUMENT
-    if (data.user.role === "PROVIDER") {
-      window.location.href = "/provider_verification";
+    if (!res.ok || !data.access_token){
+      alert(data.error || "Register failed");
       return;
     }
 
-    // seeker
-    window.location.href = "/home";
+    // 🔐 STORE TOKEN
+    setToken(data.access_token);
+    localStorage.setItem('sklio_user', JSON.stringify(data.user));
+
+    // 🧹 CLEAN UI
+    out.textContent = "";
+    document.body.innerHTML = "";
+
+    // 🔁 REDIRECT
+    if (data.user.role === "PROVIDER") {
+      window.location.replace("/provider_verification");
+    } else {
+      window.location.replace("/home");
+    }
   }
 
   // =========================
@@ -132,36 +137,31 @@
     });
 
     const data = await res.json();
-    out.textContent = JSON.stringify(data, null, 2);
 
-    if (!res.ok || !data.access_token) return;
+    if (!res.ok || !data.access_token){
+      alert(data.error || "Login failed");
+      return;
+    }
 
     setToken(data.access_token);
     localStorage.setItem('sklio_user', JSON.stringify(data.user));
 
-    // 🔐 PROVIDER VERIFICATION FLOW (ORDER MATTERS)
+    // 🧹 CLEAN UI
+    out.textContent = "";
+    document.body.innerHTML = "";
+
+    // 🔁 REDIRECT (NO HISTORY)
     if (data.user.role === "PROVIDER") {
-
-      // 1️⃣ Aadhaar / Document missing
-      if (!data.user.document_filename) {
-        window.location.href = "/provider_verification";
-        return;
-      }
-
-      // 2️⃣ Face video missing
-      if (!data.user.verification_video_filename) {
-        window.location.href = "/provider_verification_video";
-        return;
-      }
+      window.location.replace("/provider/dashboard");
+    } else {
+      window.location.replace("/home");
     }
-
-    // 3️⃣ seeker OR fully verified provider
-    window.location.href = "/home";
   }
 
   document.getElementById('registerBtn').onclick = register;
   document.getElementById('loginBtn').onclick = login;
 </script>
+
 
 </body>
 </html>
