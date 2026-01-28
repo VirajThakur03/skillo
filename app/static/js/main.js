@@ -133,28 +133,41 @@ export function logout() {
 
 // ================== FETCH HELPERS ==================
 export async function authFetch(path, opts = {}) {
-  opts.headers = opts.headers || {};
-  const token = getToken();
+  // ✅ ALWAYS tell backend we are sending JSON
+  opts.headers = {
+    "Content-Type": "application/json",
+    ...(opts.headers || {})
+  };
 
+  const token = getToken();
   if (token) {
-    opts.headers.Authorization = 'Bearer ' + token;
+    opts.headers.Authorization = "Bearer " + token;
   }
 
   let res, data = {};
   try {
     res = await fetch(path, opts);
+
+    // Safely parse JSON (even for empty responses)
     data = await res.json().catch(() => ({}));
-  } catch {
-    return { ok: false, data: { error: 'Network error' } };
+  } catch (err) {
+    console.error("Network error:", err);
+    return { ok: false, data: { error: "Network error" } };
   }
 
+  // 🔒 Auto logout on expired / invalid token
   if (res.status === 401) {
     clearToken();
-    window.location.replace('/demo_login');
+    window.location.replace("/demo_login");
   }
 
-  return { ok: res.ok, data };
+  return {
+    ok: res.ok,
+    status: res.status,
+    data
+  };
 }
+
 
 // ================== CURRENT USER ==================
 export async function getCurrentUser(force = false) {
@@ -181,6 +194,7 @@ export async function getCurrentUser(force = false) {
   return null;
 }
 
+
 // ================== GEOLOCATION ==================
 export function getLocation(timeout = 10000) {
   return new Promise(resolve => {
@@ -198,99 +212,118 @@ export function getLocation(timeout = 10000) {
 }
 
 // ================== PROVIDER VERIFICATION GUARD ==================
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const path = window.location.pathname;
 
   // 🚫 PUBLIC / AUTH PAGES
   if (
-    path === '/' ||
-    path === '/login' ||
-    path === '/demo_login' ||
-    path === '/demo-login'
+    path === "/" ||
+    path === "/login" ||
+    path === "/demo_login" ||
+    path === "/demo-login"
   ) {
     return;
   }
 
   const token = getToken();
-  if (!token) return;
-
-  const user = await getCurrentUser(true);
-  if (!user) return;
-
-  const role   = user.role;
-  const status = user.verification_status;
-  const needsSelfie = user.requires_selfie === true;
-  const isVerified  = user.is_verified === true;
-
-  // ✅ Fully verified → allow everything
-  if (isVerified || status === 'completed') {
+  if (!token) {
+    window.location.replace("/demo_login");
     return;
   }
 
-  if (role !== 'PROVIDER') return;
+  const user = await getCurrentUser(true);
+  if (!user) {
+    window.location.replace("/demo_login");
+    return;
+  }
+
+  /* ==================================================
+     🔒 PROVIDER PROFILE GLOBAL GUARD
+  ================================================== */
+  if (
+    user.role === "PROVIDER" &&
+    user.is_provider_profile_complete === false &&
+    path !== "/provider/profile"
+  ) {
+    window.location.replace("/provider/profile");
+    return;
+  }
+
+  const role = user.role; // "PROVIDER" | "SEEKER"
+  const status = user.verification_status;
+  const needsSelfie = user.requires_selfie === true;
+  const isVerified = user.is_verified === true;
+
+  // ✅ Fully verified → allow everything
+  if (isVerified || status === "completed") {
+    return;
+  }
+
+  // Seeker should not be locked
+  if (role !== "PROVIDER") return;
 
   // ==================================================
-  // 🔒 HARD LOCK 1: SELFIE PAGE (ABSOLUTE)
+  // 🔒 HARD LOCK 1: SELFIE PAGE
   // ==================================================
-  if (path === '/provider_verification_selfie') {
-    return; // ⛔ NEVER redirect away from selfie page
+  if (path === "/provider_verification_selfie") {
+    return;
   }
 
   // ==================================================
   // 🔒 HARD LOCK 2: VIDEO PAGE DURING SELFIE REQUIREMENT
   // ==================================================
   if (
-    status === 'document_verified' &&
+    status === "document_verified" &&
     needsSelfie === true &&
-    path === '/provider_verification_video'
+    path === "/provider_verification_video"
   ) {
-    window.location.replace('/provider_verification_selfie');
+    window.location.replace("/provider_verification_selfie");
     return;
   }
 
   // ❌ Rejected → restart
-  if (status === 'rejected' && path !== '/provider_verification') {
-    window.location.replace('/provider_verification');
+  if (status === "rejected" && path !== "/provider_verification") {
+    window.location.replace("/provider_verification");
     return;
   }
 
   // 🟡 Step 1: Document
-  if (status === 'pending' && path !== '/provider_verification') {
-    window.location.replace('/provider_verification');
+  if (status === "pending" && path !== "/provider_verification") {
+    window.location.replace("/provider_verification");
     return;
   }
 
   // 🟡 Step 2: Selfie
   if (
-    status === 'document_verified' &&
+    status === "document_verified" &&
     needsSelfie === true &&
-    path !== '/provider_verification_selfie'
+    path !== "/provider_verification_selfie"
   ) {
-    window.location.replace('/provider_verification_selfie');
+    window.location.replace("/provider_verification_selfie");
     return;
   }
 
   // 🟡 Step 3: Video
   if (
-    status === 'document_verified' &&
+    status === "document_verified" &&
     needsSelfie === false &&
-    path !== '/provider_verification_video'
+    path !== "/provider_verification_video"
   ) {
-    window.location.replace('/provider_verification_video');
+    window.location.replace("/provider_verification_video");
     return;
   }
 
   // 🟢 Step 4: Location
   if (
-    status === 'face_verified' &&
-    path !== '/confirm_location'
+    status === "face_verified" &&
+    path !== "/confirm_location"
   ) {
-    window.location.replace('/confirm_location');
+    window.location.replace("/confirm_location");
     return;
   }
 
   // ================== AUTH BAR ==================
-  const authBar = document.querySelector('[data-auth-bar]');
+  const authBar = document.querySelector("[data-auth-bar]");
   if (!authBar) return;
 
   authBar.innerHTML = `
@@ -301,6 +334,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   `;
 
   document
-    .getElementById('logoutBtn')
-    ?.addEventListener('click', logout);
+    .getElementById("logoutBtn")
+    ?.addEventListener("click", logout);
 });

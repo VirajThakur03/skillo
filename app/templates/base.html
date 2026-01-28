@@ -71,27 +71,34 @@
 
   <!-- Fade-in animation on scroll -->
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const els = document.querySelectorAll('.card, .skill-card, .flip-card');
-      const onScroll = () => {
-        const trigger = window.innerHeight * 0.9;
-        els.forEach(el => {
-          const rect = el.getBoundingClientRect();
-          if (rect.top < trigger) {
-            el.style.opacity = 1;
-            el.style.transform = 'translateY(0px)';
-          }
-        });
-      };
+  function goToBooking(skillId) {
+    window.location.href = `/booking/${skillId}`;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const els = document.querySelectorAll('.card, .skill-card, .flip-card');
+
+    const onScroll = () => {
+      const trigger = window.innerHeight * 0.9;
       els.forEach(el => {
-        el.style.opacity = 0;
-        el.style.transform = 'translateY(22px)';
-        el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        const rect = el.getBoundingClientRect();
+        if (rect.top < trigger) {
+          el.style.opacity = 1;
+          el.style.transform = 'translateY(0px)';
+        }
       });
-      window.addEventListener('scroll', onScroll);
-      onScroll();
+    };
+
+    els.forEach(el => {
+      el.style.opacity = 0;
+      el.style.transform = 'translateY(22px)';
+      el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
     });
-  </script>
+
+    window.addEventListener('scroll', onScroll);
+    onScroll();
+  });
+</script>
 
   {% block scripts %}{% endblock %}
 </body>

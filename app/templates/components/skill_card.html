@@ -1,20 +1,43 @@
 <!-- app/templates/components/skill_card.html -->
-<article class="skill-card">
+<article class="skill-card"
+         onclick="goToBooking({{ s.id }})"
+         style="cursor:pointer">
+
   <div class="skill-card-left">
     <div class="avatar">{{ s.provider.name[0]|upper }}</div>
   </div>
+
   <div class="skill-card-body">
-    <h3><a href="{{ url_for('front.skill_profile', skill_id=s.id) }}">{{ s.title }}</a></h3>
-    <p class="muted">{{ s.description[:120] }}{% if s.description|length > 120 %}...{% endif %}</p>
+    <h3>{{ s.title }}</h3>
+
+    <p class="muted">
+      {% if s.description %}
+        {{ s.description[:120] }}{% if s.description|length > 120 %}...{% endif %}
+      {% else %}
+        <span class="muted">No description provided</span>
+      {% endif %}
+    </p>
+
     <div class="meta">
       <span>By {{ s.provider.name }}</span>
       <span>•</span>
       <span>₹{{ '%.0f'|format(s.price) }}</span>
-      {% if s.location %}<span>•</span><span>{{ s.location }}</span>{% endif %}
+      {% if s.location %}
+        <span>•</span><span>{{ s.location }}</span>
+      {% endif %}
     </div>
   </div>
-  <div class="skill-card-actions">
-    <a class="btn small" href="{{ url_for('front.booking_page', skill_id=s.id) }}">Book</a>
-    <a class="btn ghost small" href="{{ url_for('front.chat_page', room='skill_' ~ s.id) }}">Chat</a>
+
+  <div class="skill-card-actions"
+       onclick="event.stopPropagation()">
+    <a class="btn small"
+       href="{{ url_for('front.booking_page', skill_id=s.id) }}?provider={{ s.provider.id }}">
+      Book
+    </a>
+    <a class="btn ghost small"
+       href="{{ url_for('front.chat_page', room='skill_' ~ s.id) }}">
+      Chat
+    </a>
   </div>
 </article>
+

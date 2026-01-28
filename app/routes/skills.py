@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify
 from ..extensions import db
 from ..models import Skill, User
 from decimal import Decimal
+from math import radians, sin, cos, sqrt, atan2
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 skills_bp = Blueprint("skills", __name__)
@@ -92,4 +93,54 @@ def create_skill():
     db.session.commit()
     return {"id": skill.id, "title": skill.title}, 201
 
+@skills_bp.route("/providers")
+@jwt_required(optional=True)
+def skill_providers():
+    skill_id = request.args.get("skill_id", type=int)
+    sort = request.args.get("sort", "distance")
 
+    if not skill_id:
+        return {"error": "skill_id required"}, 400
+
+    skill = Skill.query.get_or_404(skill_id)
+
+    seeker = None
+    if get_jwt_identity():
+        seeker = User.query.get(get_jwt_identity())
+
+    providers = Skill.query.filter_by(
+        title=skill.title,
+        is_active=True
+    ).all()
+
+    results = []
+
+    for s in providers:
+        provider = s.provider
+
+        distance = 999
+        if seeker and seeker.latitude and provider.latitude:
+            distance = haversine(
+                seeker.latitude,
+                seeker.longitude,
+                provider.latitude,
+                provider.longitude,
+            )
+
+        results.append({
+            "id": provider.id,
+            "name": provider.name,
+            "rating": provider.rating or 0,
+            "price": float(s.price),
+            "distance_km": distance,
+            "skill_id": s.id
+        })
+
+    if sort == "price":
+        results.sort(key=lambda x: x["price"])
+    elif sort == "rating":
+        results.sort(key=lambda x: -x["rating"])
+    else:
+        results.sort(key=lambda x: x["distance_km"])
+
+    return results

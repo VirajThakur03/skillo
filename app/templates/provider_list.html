@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Available Providers</h2>
+
+<div class="filters">
+  <select id="sort">
+    <option value="distance">Nearest</option>
+    <option value="price">Lowest Price</option>
+    <option value="rating">Best Rating</option>
+  </select>
+</div>
+
+<div id="providers"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+const skillId = {{ skill_id }};
+const providersDiv = document.getElementById("providers");
+const sortSelect = document.getElementById("sort");
+
+async function loadProviders() {
+  const res = await authFetch(
+    `/api/skills/providers?skill_id=${skillId}&sort=${sortSelect.value}`
+  );
+
+  if (!res.ok) {
+    providersDiv.innerHTML = "Failed to load providers";
+    return;
+  }
+
+  providersDiv.innerHTML = res.data.map(p => `
+    <div class="card">
+      <h3>${p.name}</h3>
+      <p>₹${p.price} • ⭐ ${p.rating}</p>
+      <p>${p.distance_km.toFixed(1)} km away</p>
+      <a class="btn" href="/booking/${p.skill_id}?provider=${p.id}">
+        Book
+      </a>
+    </div>
+  `).join("");
+}
+
+sortSelect.addEventListener("change", loadProviders);
+loadProviders();
+</script>
+{% endblock %}

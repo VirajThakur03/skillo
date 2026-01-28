@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card glass">
+  <h2>My Bookings</h2>
+  <div id="list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+const list = document.getElementById("list");
+
+const res = await authFetch("/api/bookings/my");
+if (!res.ok) {
+  list.innerHTML = "<p>Error loading bookings</p>";
+} else if (res.data.length === 0) {
+  list.innerHTML = "<p class='muted'>No bookings yet</p>";
+} else {
+  list.innerHTML = res.data.map(b => `
+    <div class="card">
+      <strong>${b.skill}</strong><br/>
+      Provider: ${b.provider}<br/>
+      Status: <b>${b.status}</b><br/>
+      <a href="/chat/booking_${b.id}">Chat</a> •
+      <a href="/track/${b.id}">Track</a>
+    </div>
+  `).join("");
+}
+</script>
+{% endblock %}

@@ -1,7 +1,15 @@
 # app/routes/bookings.py
 from flask import Blueprint, request, jsonify
 from ..extensions import db, socketio
-from ..models import Booking, Skill, User, BookingStatus, PaymentStatus
+from ..models import (
+    Booking,
+    Skill,
+    User,
+    BookingStatus,
+    PaymentStatus,
+    RoleEnum,
+)
+from decimal import Decimal
 from ..config import Config
 from ..integrations.whatsapp import send_whatsapp_message
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -13,59 +21,76 @@ bookings_bp = Blueprint("bookings", __name__)
 @bookings_bp.route("", methods=["POST"])
 @jwt_required()
 def create_booking():
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     data = request.get_json() or {}
+
     skill_id = data.get("skill_id")
+    provider_id = data.get("provider_id")   # ✅ NEW
     scheduled_at = data.get("scheduled_at")
-    duration = data.get("duration_minutes", 60)
+    duration = int(data.get("duration_minutes", 60))
 
     if not skill_id or not scheduled_at:
         return {"error": "skill_id and scheduled_at are required"}, 400
 
-    skill = Skill.query.get(skill_id)
-    if not skill:
-        return {"error": "skill not found"}, 404
+    if not provider_id:
+        return {"error": "provider_id is required"}, 400
 
-    # basic check: provider != seeker
-    if skill.provider_id == user_id:
-        return {"error": "cannot book your own skill"}, 400
-
-    # parse scheduled_at (expecting ISO string)
-    try:
-        scheduled_dt = datetime.fromisoformat(scheduled_at)
-    except Exception:
-        return {"error": "invalid scheduled_at format, use ISO datetime"}, 400
-
-    # --- REFERRAL WALLET LOGIC ---
     seeker = User.query.get(user_id)
     if not seeker:
         return {"error": "user not found"}, 404
 
-    # Convert Numeric price to float safely
+    # ✅ only SEEKER can book
+    if seeker.role != RoleEnum.SEEKER:
+        return {"error": "only seekers can create bookings"}, 403
+
+    skill = Skill.query.get(skill_id)
+    if not skill or not skill.is_active:
+        return {"error": "skill not found"}, 404
+
+    # 🔒 CRITICAL SECURITY CHECK
+    if skill.provider_id != int(provider_id):
+        return {"error": "invalid provider for this skill"}, 400
+
+    # prevent self booking
+    if skill.provider_id == seeker.id:
+        return {"error": "cannot book your own skill"}, 400
+
     try:
-        full_price = float(skill.price or 0.0)
+        scheduled_dt = datetime.fromisoformat(scheduled_at)
     except Exception:
-        full_price = 0.0
+        return {"error": "invalid scheduled_at format (ISO required)"}, 400
 
-    wallet = float(seeker.wallet_balance or 0.0)
-    referral_used = min(wallet, full_price)  # use wallet first up to full price
-    remaining_to_pay = full_price - referral_used
+    # ------------------------------
+    # 💰 PRICE CALC
+    # ------------------------------
+    base_price = Decimal(skill.price or 0)
+    hours = Decimal(duration) / Decimal(60)
+    full_price = base_price * hours
 
-    # update wallet balance
-    seeker.wallet_balance = wallet - referral_used
+    # ------------------------------
+    # 🎁 WALLET
+    # ------------------------------
+    wallet_balance = Decimal(seeker.wallet_balance or 0)
+    referral_used = min(wallet_balance, full_price)
+    payable_amount = full_price - referral_used
 
-    # --- monetization: platform fee based on full price ---
-    platform_pct = float(getattr(Config, "PLATFORM_FEE_DEFAULT", 5.0))
-    platform_fee_amount = (full_price * platform_pct) / 100.0
-    worker_earnings = full_price - platform_fee_amount
+    # ------------------------------
+    # 🧾 PLATFORM FEE
+    # ------------------------------
+    platform_pct = Decimal(getattr(Config, "PLATFORM_FEE_DEFAULT", 5))
+    platform_fee_amount = (payable_amount * platform_pct) / Decimal(100)
+    worker_earnings = payable_amount - platform_fee_amount
 
+    # ------------------------------
+    # 🧾 CREATE BOOKING
+    # ------------------------------
     booking = Booking(
-        seeker_id=user_id,
-        provider_id=skill.provider_id,
+        seeker_id=seeker.id,
+        provider_id=int(provider_id),   # 🔥 FIXED
         skill_id=skill.id,
         scheduled_at=scheduled_dt,
         duration_minutes=duration,
-        price=full_price,          # final service price (before wallet)
+        price=full_price,
         currency=skill.currency,
         status=BookingStatus.PENDING,
         payment_status=PaymentStatus.NONE,
@@ -73,43 +98,51 @@ def create_booking():
         platform_fee_amount=platform_fee_amount,
         worker_earnings=worker_earnings,
         referral_credit_used=referral_used,
-        # payment gateway placeholders (for later integration)
         payment_intent_id=None,
         payment_ref=None,
     )
+
     db.session.add(booking)
+
+    # ✅ deduct wallet AFTER booking object is ready
+    seeker.wallet_balance = wallet_balance - referral_used
+
     db.session.commit()
 
-    # ---------- WhatsApp notifications (optional) ----------
+    # ------------------------------
+    # 📲 WHATSAPP (OPTIONAL)
+    # ------------------------------
     if getattr(Config, "WHATSAPP_ENABLED", False):
-        provider = User.query.get(skill.provider_id)
+        provider = User.query.get(int(provider_id))
 
-        if seeker and seeker.phone:
+        if seeker.phone:
             send_whatsapp_message(
                 seeker.phone,
-                f"Sklio booking created: #{booking.id} with {provider.name} "
-                f"for {skill.title} at {scheduled_dt}. "
-                f"Wallet used: ₹{int(referral_used)} • Payable: ₹{int(remaining_to_pay)}"
+                f"✅ Booking #{booking.id} created\n"
+                f"Service: {skill.title}\n"
+                f"Wallet used: ₹{int(referral_used)}\n"
+                f"Payable: ₹{int(payable_amount)}"
             )
 
         if provider and provider.phone:
             send_whatsapp_message(
                 provider.phone,
-                f"New Sklio job request: #{booking.id} from {seeker.name} for {skill.title}."
+                f"📢 New job request #{booking.id}\n"
+                f"Service: {skill.title}\n"
+                f"From: {seeker.name}"
             )
 
     return {
         "id": booking.id,
         "status": booking.status.value,
-        "price": float(booking.price),
+        "full_price": float(full_price),
         "currency": booking.currency,
-        "referral_credit_used": referral_used,
-        "remaining_to_pay": remaining_to_pay,
+        "wallet_used": float(referral_used),
+        "payable_amount": float(payable_amount),
         "platform_fee_pct": float(platform_pct),
-        "platform_fee_amount": platform_fee_amount,
-        "worker_earnings": worker_earnings,
+        "platform_fee_amount": float(platform_fee_amount),
+        # "worker_earnings": float(worker_earnings),
     }, 201
-
 
 @bookings_bp.route("/<int:booking_id>", methods=["GET"])
 @jwt_required()
@@ -288,6 +321,8 @@ def review_booking(booking_id):
     Seeker leaves a rating/review after booking is completed.
     Updates provider.rating and badges.
     """
+    
+    
     user_id = get_jwt_identity()
     booking = Booking.query.get(booking_id)
     if not booking:
@@ -329,3 +364,77 @@ def review_booking(booking_id):
         "provider_rating": provider.rating,
         "badges": provider.badges,
     }
+
+@bookings_bp.route("/my", methods=["GET"])
+@jwt_required()
+def my_bookings():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+
+    if not user or user.role != RoleEnum.SEEKER:
+        return {"error": "only seekers allowed"}, 403
+
+    bookings = (
+        Booking.query
+        .filter_by(seeker_id=user.id)
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
+
+    return [{
+        "id": b.id,
+        "status": b.status.value,
+        "scheduled_at": b.scheduled_at.isoformat(),
+        "price": float(b.price),
+        "skill": b.skill.title,
+        "provider": b.provider.name,
+    } for b in bookings], 200
+
+@bookings_bp.route("/provider", methods=["GET"])
+@jwt_required()
+def provider_bookings():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+
+    if not user or user.role != RoleEnum.PROVIDER:
+        return {"error": "only providers allowed"}, 403
+
+    bookings = (
+        Booking.query
+        .filter_by(provider_id=user.id)
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
+
+    return [{
+        "id": b.id,
+        "skill": b.skill.title,
+        "seeker": b.seeker.name,
+        "status": b.status.value,
+        "scheduled_at": b.scheduled_at.isoformat(),
+    } for b in bookings], 200
+
+@bookings_bp.route("/<int:booking_id>/decision", methods=["POST"])
+@jwt_required()
+def decide_booking(booking_id):
+    user = User.query.get(int(get_jwt_identity()))
+    data = request.get_json() or {}
+    action = data.get("action")  # accept | reject
+
+    booking = Booking.query.get_or_404(booking_id)
+
+    if user.role != RoleEnum.PROVIDER or booking.provider_id != user.id:
+        return {"error": "unauthorized"}, 403
+
+    if booking.status != BookingStatus.PENDING:
+        return {"error": "already processed"}, 400
+
+    if action == "accept":
+        booking.status = BookingStatus.CONFIRMED
+    elif action == "reject":
+        booking.status = BookingStatus.DECLINED
+    else:
+        return {"error": "invalid action"}, 400
+
+    db.session.commit()
+    return {"success": True, "status": booking.status.value}

@@ -119,3 +119,16 @@ def provider_verification_selfie():
 @front_bp.route("/confirm_location")
 def confirm_location_page():
     return render_template("confirm_location.html")
+
+@front_bp.route("/providers")
+def providers_list():
+    skill_id = request.args.get("skill_id", type=int)
+    return render_template("providers_list.html", skill_id=skill_id)
+
+@front_bp.route("/provider/profile")
+def provider_profile_page():
+    return render_template("provider_profile.html")
+
+@front_bp.route("/my-bookings")
+def seeker_dashboard():
+    return render_template("seeker_dashboard.html")

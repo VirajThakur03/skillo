@@ -204,6 +204,7 @@ def me():
 
         # 🔥 NEW FLAG
         "requires_selfie": user.requires_selfie,
+        "is_provider_profile_complete": user.is_provider_profile_complete,
 
         "location": user.location,
         "latitude": user.latitude,

@@ -64,6 +64,12 @@ class User(db.Model):
         default=RoleEnum.SEEKER,
     )
 
+    is_provider_profile_complete = db.Column(
+    db.Boolean,
+    default=False,
+    nullable=False
+    )
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # --------------------

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card glass">
+  <h2>Complete Provider Profile</h2>
+  <p class="muted">This is required before accepting bookings</p>
+
+  <form id="profileForm">
+    <label>Name</label>
+    <input id="name" required />
+
+    <label>Phone</label>
+    <input id="phone" required />
+
+    <label>Primary Skill</label>
+    <input id="skill" placeholder="Electrician / Plumber" required />
+
+    <label>Price per hour (₹)</label>
+    <input id="price" type="number" min="1" required />
+
+    <label>Location</label>
+    <input id="location" placeholder="Mumbai, Pune…" required />
+
+    <button class="btn primary" id="saveBtn">
+      Save Profile
+    </button>
+  </form>
+
+  <p id="status" class="muted" style="margin-top:8px;"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, getCurrentUser } from "/static/js/main.js";
+
+const form = document.getElementById("profileForm");
+const statusEl = document.getElementById("status");
+const btn = document.getElementById("saveBtn");
+
+/* -------------------------------
+   Prefill name (nice UX)
+-------------------------------- */
+document.addEventListener("DOMContentLoaded", async () => {
+  const user = await getCurrentUser(true);
+  if (user?.name) {
+    document.getElementById("name").value = user.name;
+  }
+});
+
+/* -------------------------------
+   Save profile
+-------------------------------- */
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const priceRaw = document.getElementById("price").value.trim();
+  const price = Number(priceRaw);
+
+  if (!priceRaw || isNaN(price) || price <= 0) {
+    statusEl.innerText = "Enter a valid price greater than 0";
+    return;
+  }
+
+  const payload = {
+    name: document.getElementById("name").value.trim(),
+    phone: document.getElementById("phone").value.trim(),
+    skill: document.getElementById("skill").value.trim(),
+    price: price,
+    location: document.getElementById("location").value.trim()
+  };
+
+  // ✅ Frontend validation (IMPORTANT)
+  if (!payload.phone || !payload.skill || !payload.location || !payload.price) {
+    statusEl.innerText = "All fields are required";
+    return;
+  }
+
+  btn.disabled = true;
+  statusEl.innerText = "Saving profile…";
+
+  const res = await authFetch("/api/provider/profile", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"   // ✅ FIXED
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    statusEl.innerText = res.data?.error || "Failed to save profile";
+    btn.disabled = false;
+    return;
+  }
+
+  statusEl.innerText = "Profile saved ✔ Redirecting…";
+
+  setTimeout(() => {
+    window.location.replace("/provider/dashboard");
+  }, 700);
+});
+</script>
+{% endblock %}

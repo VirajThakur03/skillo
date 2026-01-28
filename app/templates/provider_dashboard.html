@@ -22,10 +22,13 @@
 <script type="module">
 import { authFetch } from "/static/js/main.js";
 
+/* ===============================
+   LOAD DASHBOARD
+================================ */
 async function loadDashboard(){
   const res = await authFetch("/api/provider/dashboard");
   if(!res.ok){
-    alert("Not authorized");
+    alert(res.data?.error || "Not authorized");
     return;
   }
 
@@ -34,18 +37,22 @@ async function loadDashboard(){
   document.getElementById("providerMeta").innerHTML = `
     ⭐ ${provider.rating || 0} rating •
     ${provider.completed_jobs || 0} jobs •
-    ₹${provider.wallet_balance} wallet
+    ₹${provider.wallet_balance || 0} wallet
     ${provider.is_verified ? " • ✅ Verified" : ""}
   `;
 
-  renderJobs("pendingJobs", bookings.pending, true);
-  renderJobs("activeJobs", bookings.active, false);
-  renderJobs("completedJobs", bookings.completed, false);
+  renderJobs("pendingJobs", bookings.pending);
+  renderJobs("activeJobs", bookings.active);
+  renderJobs("completedJobs", bookings.completed);
 }
 
-function renderJobs(containerId, jobs, canStart){
+/* ===============================
+   RENDER JOB CARDS
+================================ */
+function renderJobs(containerId, jobs){
   const el = document.getElementById(containerId);
-  if(jobs.length === 0){
+
+  if(!jobs || jobs.length === 0){
     el.innerHTML = "<p class='muted'>No jobs</p>";
     return;
   }
@@ -56,39 +63,86 @@ function renderJobs(containerId, jobs, canStart){
       Seeker: ${j.seeker}<br>
       Scheduled: ${new Date(j.scheduled_at).toLocaleString()}<br>
       Price: ₹${j.price}<br>
-      Status: ${j.status}
+      Status: <b>${j.status}</b>
 
       <div style="margin-top:8px;">
-        ${
-          j.status === "pending"
-            ? `<button class="btn primary" onclick="startJob(${j.id})">Start Job</button>`
-            : ""
-        }
-        ${
-          j.status === "confirmed"
-            ? `
-              <a class="btn neon" href="/worker_track/${j.id}">Share Live Location</a>
-              <button class="btn ghost" onclick="completeJob(${j.id})">Complete</button>
-            `
-            : ""
-        }
+        ${renderActions(j)}
       </div>
     </div>
   `).join("");
 }
 
-async function startJob(id){
-  alert("Job accepted automatically on payment in your system");
-}
-
-async function completeJob(id){
-  const res = await authFetch(`/api/bookings/${id}/complete`, { method: "POST" });
-  if(res.ok){
-    alert("Job completed");
-    loadDashboard();
+/* ===============================
+   ACTION BUTTONS
+================================ */
+function renderActions(job){
+  if(job.status === "PENDING"){
+    return `
+      <button class="btn primary" onclick="window.decide(${job.id}, 'accept')">
+        Accept
+      </button>
+      <button class="btn ghost" onclick="window.decide(${job.id}, 'reject')">
+        Reject
+      </button>
+    `;
   }
+
+  if(job.status === "CONFIRMED"){
+    return `
+      <a class="btn neon" href="/worker_track/${job.id}">
+        Share Live Location
+      </a>
+      <button class="btn primary" onclick="window.completeJob(${job.id})">
+        Complete
+      </button>
+    `;
+  }
+
+  return "";
 }
 
+/* ===============================
+   API ACTIONS (GLOBAL)
+================================ */
+window.decide = async function(id, action){
+  const res = await authFetch(`/api/bookings/${id}/decision`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ action })
+  });
+
+  if(!res.ok){
+    alert(res.data?.error || "Failed to update booking");
+    return;
+  }
+
+  alert(`Booking ${action}ed`);
+  loadDashboard();
+};
+
+window.completeJob = async function(id){
+  const res = await authFetch(`/api/bookings/${id}/complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+
+  if(!res.ok){
+    alert(res.data?.error || "Failed to complete job");
+    return;
+  }
+
+  alert("Job completed ✔");
+  loadDashboard();
+};
+
+/* ===============================
+   INIT
+================================ */
 loadDashboard();
 </script>
+
 {% endblock %}
