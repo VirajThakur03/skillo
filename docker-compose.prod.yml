@@ -1,0 +1,31 @@
+services:
+  web:
+    image: ${IMAGE_NAME}
+    restart: unless-stopped
+    env_file:
+      - .env.runtime
+    environment:
+      ENV: ${ENV}
+      FLASK_ENV: ${ENV}
+      PORT: 5000
+      RUN_MIGRATIONS_ON_START: "false"
+      ALLOW_UNSAFE_WERKZEUG: "false"
+      SOCKETIO_ASYNC_MODE: threading
+      GUNICORN_WORKER_CLASS: gthread
+      GUNICORN_THREADS: "100"
+      PAYMENT_PROVIDER: stripe
+      PAYMENT_MODE: real
+      ALLOW_MOCK_PAYMENTS: "false"
+    ports:
+      - "${APP_PORT}:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

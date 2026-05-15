@@ -1,47 +1,146 @@
 {% extends "base.html" %}
 
+{% block title %}Browse Providers | Sklio{% endblock %}
 {% block content %}
-<h2>Available Providers</h2>
+<section class="section mk-fade-in">
+  <div class="mk-card">
+    <h2 class="mk-display-md">Available Providers</h2>
+    <p class="mk-body-sm">Choose a trusted provider and book instantly.</p>
+    <div class="filters" style="margin-top:12px;">
+      <label class="mk-label" for="sort">Sort by</label>
+      <select id="sort">
+        <option value="distance">Nearest</option>
+        <option value="price">Lowest Price</option>
+        <option value="rating">Best Rating</option>
+      </select>
+    </div>
+  </div>
+</section>
 
-<div class="filters">
-  <select id="sort">
-    <option value="distance">Nearest</option>
-    <option value="price">Lowest Price</option>
-    <option value="rating">Best Rating</option>
-  </select>
-</div>
-
-<div id="providers"></div>
+<section id="providers" class="cards mk-fade-in"></section>
+<template id="providerSkeleton">
+  <div class="mk-card mk-card-provider" style="min-height:160px;">
+    <div style="display:flex; gap:12px; align-items:center;">
+      <div class="mk-skeleton" style="width:48px;height:48px;border-radius:9999px;"></div>
+      <div>
+        <div class="mk-skeleton" style="width:140px;height:16px;"></div>
+        <div class="mk-skeleton" style="width:80px;height:12px;margin-top:8px;"></div>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <div class="mk-skeleton" style="width:60px;height:20px;border-radius:9999px;"></div>
+      <div class="mk-skeleton" style="width:80px;height:20px;border-radius:9999px;"></div>
+      <div class="mk-skeleton" style="width:70px;height:20px;border-radius:9999px;"></div>
+    </div>
+    <div class="mk-skeleton" style="width:100px;height:14px;margin-top:14px;"></div>
+  </div>
+</template>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
 import { authFetch } from "/static/js/main.js";
+import { bindFavoriteButtons, applyFavoriteSavedState } from "/static/js/favorites.js";
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function providerMetricChips(p) {
+  const chips = [];
+  if (p.response_label) {
+    chips.push(
+      `<span class="mk-provider-metric-chip mk-provider-metric-chip--response"><i data-lucide="zap" style="width:12px;height:12px;"></i>${escapeHtml(p.response_label)}</span>`
+    );
+  }
+  if (p.acceptance_rate != null && Number(p.acceptance_rate) >= 70) {
+    chips.push(
+      `<span class="mk-provider-metric-chip mk-provider-metric-chip--accept"><i data-lucide="circle-check" style="width:12px;height:12px;"></i>${escapeHtml(String(Math.round(Number(p.acceptance_rate))))}%</span>`
+    );
+  }
+  if (!chips.length) return "";
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${chips.join("")}</div>`;
+}
 
 const skillId = {{ skill_id }};
 const providersDiv = document.getElementById("providers");
 const sortSelect = document.getElementById("sort");
 
 async function loadProviders() {
+  providersDiv.innerHTML = [1,2,3].map(i => {
+    const tpl = document.getElementById("providerSkeleton").content.cloneNode(true);
+    const wrap = document.createElement("div");
+    wrap.className = "mk-stagger-child";
+    wrap.appendChild(tpl);
+    return wrap.outerHTML;
+  }).join("");
+
   const res = await authFetch(
     `/api/skills/providers?skill_id=${skillId}&sort=${sortSelect.value}`
   );
 
   if (!res.ok) {
-    providersDiv.innerHTML = "Failed to load providers";
+    providersDiv.innerHTML = `
+      <div class="mk-card" style="max-width:320px;margin:40px auto;text-align:center;">
+        <div style="margin-bottom:20px;color:var(--danger-600);"><i data-lucide="circle-alert" style="width:60px;height:60px;"></i></div>
+        <h3 class="mk-heading">Unable to load providers</h3>
+        <p class="mk-body-sm">Please try again in a moment.</p>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
     return;
   }
 
-  providersDiv.innerHTML = res.data.map(p => `
-    <div class="card">
-      <h3>${p.name}</h3>
-      <p>₹${p.price} • ⭐ ${p.rating}</p>
-      <p>${p.distance_km.toFixed(1)} km away</p>
-      <a class="btn" href="/booking/${p.skill_id}?provider=${p.id}">
-        Book
-      </a>
-    </div>
+  if (!res.data.length) {
+    providersDiv.innerHTML = `
+      <div class="mk-card" style="max-width:320px;margin:40px auto;text-align:center;">
+        <div style="margin-bottom:20px;color:var(--brand-200);"><i data-lucide="search-x" style="width:80px;height:80px;"></i></div>
+        <h3 class="mk-heading">No providers found</h3>
+        <p class="mk-body-sm">Try a nearby area, or adjust your sorting and filters.</p>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  providersDiv.innerHTML = res.data.map((p, idx) => `
+    <article class="mk-card mk-card-provider mk-stagger-child" data-testid="provider-card" style="animation-delay:${idx * 80}ms;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div style="display:flex;gap:12px;">
+          <div class="avatar" style="width:48px;height:48px;border-radius:9999px;">${(p.name || "?")[0]}</div>
+          <div>
+            <div class="mk-subheading" style="font-family:var(--font-display);font-weight:600;color:var(--gray-900);">${escapeHtml(p.name)}</div>
+            <div class="mk-body-sm">⭐ ${Number(p.rating || 0).toFixed(1)}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button type="button" class="mk-favorite-btn${p.is_saved ? " is-saved" : ""}" data-mk-favorite-for="${p.id}" aria-label="Save provider" aria-pressed="${p.is_saved ? "true" : "false"}">
+            <i data-lucide="heart"></i>
+          </button>
+          <span class="mk-chip" data-state="confirmed">Confirmed</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+        <span class="mk-badge" data-type="verified"><i data-lucide="shield-check" style="width:12px;height:12px;"></i>Verified</span>
+      </div>
+      <div class="mk-body-sm" style="margin-top:10px;color:var(--gray-500);">
+        Serves nearby areas • ${(Number(p.distance_km || 0)).toFixed(1)} km away
+      </div>
+      ${providerMetricChips(p)}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+        <div class="mk-price" style="color:var(--brand-700);">From ₹${Number(p.price || 0).toFixed(0)}</div>
+        <a class="btn primary" data-testid="book-now-btn" href="/booking/${p.skill_id}?provider=${p.id}">Book now</a>
+      </div>
+    </article>
   `).join("");
+  bindFavoriteButtons(providersDiv);
+  await applyFavoriteSavedState(providersDiv);
+  if (window.lucide) window.lucide.createIcons();
 }
 
 sortSelect.addEventListener("change", loadProviders);

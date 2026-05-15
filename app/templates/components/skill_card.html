@@ -1,43 +1,62 @@
-<!-- app/templates/components/skill_card.html -->
-<article class="skill-card"
-         onclick="goToBooking({{ s.id }})"
-         style="cursor:pointer">
-
-  <div class="skill-card-left">
+<article class="skill-card clickable mk-card mk-card-provider mk-stagger-child" data-testid="provider-card" style="position:relative;" onclick="goToBooking({{ s.id }}, {{ s.provider.id }})">
+  <button type="button" class="mk-favorite-btn" data-mk-favorite-for="{{ s.provider.id }}" aria-label="Save provider" title="Save provider" style="position:absolute;top:10px;right:10px;z-index:2;">
+    <i data-lucide="heart"></i>
+  </button>
+  {% if s.provider.profile_photo_url %}
+    <img src="{{ s.provider.profile_photo_url if s.provider.profile_photo_url.startswith('http') else '/api/system/upload?ref=' + s.provider.profile_photo_url }}" class="avatar" style="object-fit:cover; display:block;" alt="{{ s.provider.name }}" loading="lazy" />
+  {% else %}
     <div class="avatar">{{ s.provider.name[0]|upper }}</div>
-  </div>
-
+  {% endif %}
   <div class="skill-card-body">
-    <h3>{{ s.title }}</h3>
-
-    <p class="muted">
+    {% set pm = provider_seeker_metrics.get(s.provider.id, {}) if provider_seeker_metrics is defined else {} %}
+    <div class="badge-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+      {% if s.provider.is_accepting_bookings %}
+      <span class="mk-badge" style="background:var(--success-50);color:var(--success-700);border:1px solid var(--success-100);"><i data-lucide="circle" style="width:8px;height:8px;fill:currentColor;"></i>Online</span>
+      {% else %}
+      <span class="mk-badge" style="background:var(--gray-50);color:var(--gray-600);border:1px solid var(--gray-200);"><i data-lucide="circle" style="width:8px;height:8px;fill:transparent;border:1px solid currentColor;"></i>Offline</span>
+      {% endif %}
+      {% if s.provider.is_verified %}
+      <span class="mk-badge" data-type="verified"><i data-lucide="shield-check" style="width:12px;height:12px;"></i>Verified</span>
+      {% endif %}
+    </div>
+    <h3 class="mk-heading">{{ s.title }}</h3>
+    <p class="mk-body-sm">
       {% if s.description %}
         {{ s.description[:120] }}{% if s.description|length > 120 %}...{% endif %}
       {% else %}
         <span class="muted">No description provided</span>
       {% endif %}
     </p>
-
-    <div class="meta">
+    <div class="skill-meta">
       <span>By {{ s.provider.name }}</span>
       <span>•</span>
-      <span>₹{{ '%.0f'|format(s.price) }}</span>
+      <span class="mk-price" style="font-size:16px;color:var(--brand-700);">₹{{ '%.0f'|format(s.price) }}</span>
       {% if s.location %}
         <span>•</span><span>{{ s.location }}</span>
       {% endif %}
+      <span>•</span>
+      <span>{{ '%.1f'|format(s.provider.rating or 0) }} rating</span>
     </div>
+    {% if pm.get('response_label') or (pm.get('acceptance_rate') is not none and pm.acceptance_rate >= 70) %}
+    <div class="badge-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">
+      {% if pm.get('response_label') %}
+      <span class="mk-provider-metric-chip mk-provider-metric-chip--response"><i data-lucide="zap" style="width:12px;height:12px;"></i>{{ pm.response_label }}</span>
+      {% endif %}
+      {% if pm.get('acceptance_rate') is not none and pm.acceptance_rate >= 70 %}
+      <span class="mk-provider-metric-chip mk-provider-metric-chip--accept"><i data-lucide="circle-check" style="width:12px;height:12px;"></i>{{ '%.0f'|format(pm.acceptance_rate) }}%</span>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
-
-  <div class="skill-card-actions"
-       onclick="event.stopPropagation()">
-    <a class="btn small"
+  <div class="skill-card-actions" onclick="event.stopPropagation()">
+    <a class="btn primary"
+       data-testid="book-now-btn"
        href="{{ url_for('front.booking_page', skill_id=s.id) }}?provider={{ s.provider.id }}">
       Book
     </a>
-    <a class="btn ghost small"
+    <a class="btn ghost"
        href="{{ url_for('front.chat_page', room='skill_' ~ s.id) }}">
       Chat
     </a>
   </div>
 </article>
-

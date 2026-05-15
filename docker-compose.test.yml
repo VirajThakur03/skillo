@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    container_name: sklio-web-test
+    environment:
+      - FLASK_ENV=testing
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["python", "-m", "pytest", "-q"]

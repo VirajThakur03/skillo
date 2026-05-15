@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}Operations Dashboard | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Admin Control Panel</p>
+        <h1>Moderation, disputes, fraud flags, promos, notification delivery, and city launch signals.</h1>
+        <p class="muted">This page turns the admin and growth PRD slices into one practical control room.</p>
+      </div>
+      <div class="action-cluster">
+        <a class="btn ghost" href="/notifications">Notification hub</a>
+        <a class="btn ghost" href="/ai-assist">AI assist</a>
+      </div>
+    </div>
+  </div>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Overview</p>
+        <h2>Marketplace health</h2>
+      </div>
+    </div>
+    <div id="opsOverview" class="dashboard-metrics"></div>
+    
+    <div class="field-grid" style="grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+       <div class="card" style="padding: 16px;">
+          <p class="mk-label-upper" style="margin-bottom: 12px;">30-Day Booking Trend</p>
+          <div id="bookingTrendChart" style="height: 120px;"></div>
+       </div>
+       <div class="card" style="padding: 16px;">
+          <p class="mk-label-upper" style="margin-bottom: 12px;">30-Day Revenue Trend</p>
+          <div id="revenueTrendChart" style="height: 120px;"></div>
+       </div>
+    </div>
+
+    <div class="field-grid" style="margin-top: 24px;">
+      <div class="dashboard-note">
+        <strong>Top service categories</strong>
+        <div id="topCategoriesChart" style="margin-top: 12px;"></div>
+      </div>
+      <div class="dashboard-note">
+        <strong>Top search demand</strong>
+        <div id="topQueries" class="job-list"></div>
+      </div>
+    </div>
+    
+    <div class="field-grid" style="margin-top: 24px;">
+      <div class="dashboard-note">
+        <strong>City launch readiness</strong>
+        <div id="cityLaunch" class="job-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Promo engine</p>
+        <h2>Create and review live offers</h2>
+      </div>
+      <button class="btn primary" id="createPromoBtn" type="button">Create promo</button>
+    </div>
+    <div class="field-grid">
+      <div class="form-stack">
+        <label>Code</label>
+        <input id="promoCode" placeholder="FIRST100">
+        <label>Title</label>
+        <input id="promoTitle" placeholder="First booking offer">
+        <label>Discount type</label>
+        <select id="promoType">
+          <option value="PERCENT">Percent</option>
+          <option value="FIXED">Fixed</option>
+        </select>
+        <label>Discount value</label>
+        <input id="promoValue" type="number" min="1" step="1" value="10">
+      </div>
+      <div id="promoList" class="job-list"></div>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Fraud desk</p>
+        <h2>Flag suspicious activity and review open flags</h2>
+      </div>
+      <button class="btn ghost" id="createFlagBtn" type="button">Create flag</button>
+    </div>
+    <div class="field-grid">
+      <div class="form-stack">
+        <label>User ID</label>
+        <input id="flagUserId" type="number" min="1">
+        <label>Booking ID</label>
+        <input id="flagBookingId" type="number" min="1">
+        <label>Severity</label>
+        <select id="flagSeverity">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <label>Reason</label>
+        <textarea id="flagReason" rows="3" placeholder="Explain the suspicious pattern"></textarea>
+      </div>
+      <div id="flagList" class="job-list"></div>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Notifications</p>
+        <h2>Template keys and delivery log</h2>
+      </div>
+    </div>
+    <div class="field-grid">
+      <div id="templateList" class="job-list"></div>
+      <div id="deliveryList" class="job-list"></div>
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, showMkToast, getCurrentUser } from "/static/js/main.js";
+
+const opsOverview = document.getElementById("opsOverview");
+const cityLaunch = document.getElementById("cityLaunch");
+const topQueries = document.getElementById("topQueries");
+const promoList = document.getElementById("promoList");
+const flagList = document.getElementById("flagList");
+const templateList = document.getElementById("templateList");
+const deliveryList = document.getElementById("deliveryList");
+
+// Add auth guard
+async function enforceAdmin() {
+  const user = await getCurrentUser();
+  if (!user || !user.is_admin) {
+    window.location.replace("/home");
+  }
+}
+enforceAdmin();
+
+function metric(label, value) {
+  return `<div class="metric-card"><span class="muted">${label}</span><strong>${value}</strong></div>`;
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderLineChart(containerId, data, valKey) {
+  const container = document.getElementById(containerId);
+  if (!data || data.length === 0) {
+    container.innerHTML = "<p class='muted small'>No data</p>";
+    return;
+  }
+  
+  const maxVal = Math.max(...data.map(d => d[valKey])) || 1;
+  const points = data.map((d, i) => `${(i / (data.length - 1)) * 100},${100 - (d[valKey] / maxVal) * 100}`).join(" ");
+  
+  container.innerHTML = `
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; overflow: visible;">
+      <polyline points="${points}" fill="none" stroke="var(--brand-500)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+      <area points="${points} 100,100 0,100" fill="var(--brand-100)" opacity="0.1" />
+    </svg>
+  `;
+}
+
+function renderBarChart(containerId, data) {
+  const container = document.getElementById(containerId);
+  if (!data || data.length === 0) {
+    container.innerHTML = "<p class='muted small'>No data</p>";
+    return;
+  }
+  
+  const maxCount = Math.max(...data.map(d => d[1])) || 1;
+  container.innerHTML = data.map(([label, count]) => {
+    const safeLabel = escapeHtml(label);
+    const shortLabel = label.length > 20 ? escapeHtml(label.slice(0, 20)) + "…" : safeLabel;
+    return `
+    <div style="margin-bottom: 8px;" title="${safeLabel}">
+       <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+          <span>${shortLabel}</span>
+          <span class="muted">${count}</span>
+       </div>
+       <div style="height: 6px; background: #eee; border-radius: 3px; overflow: hidden;">
+          <div style="height: 100%; background: var(--brand-500); width: ${(count/maxCount)*100}%; transition: width 1s ease;"></div>
+       </div>
+    </div>
+  `}).join("");
+}
+
+async function loadOverview() {
+  const response = await authFetch("/api/ops/admin/overview");
+  if (!response.ok) {
+    opsOverview.innerHTML = `<div class="empty-state"><p class="muted">${response.data?.error || "Admin access required."}</p></div>`;
+    return;
+  }
+
+  const data = response.data;
+  opsOverview.innerHTML = [
+    metric("Seekers", data.users.seekers),
+    metric("Providers", data.users.providers),
+    metric("Total bookings", data.bookings.total),
+    metric("Open disputes", data.disputes.open),
+    metric("Fraud flags", data.fraud_flags),
+  ].join("");
+
+  renderLineChart("bookingTrendChart", data.trends.bookings, "count");
+  renderLineChart("revenueTrendChart", data.trends.revenue, "amount");
+  renderBarChart("topCategoriesChart", data.top_categories);
+
+  topQueries.innerHTML = (data.top_queries || []).map((row) => `
+    <article class="job-item">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(row.query)}</h3>
+          <p class="muted">${row.count} tracked searches</p>
+        </div>
+      </div>
+    </article>
+  `).join("") || `<div class="empty-state"><p class="muted">No search analytics yet.</p></div>`;
+
+  cityLaunch.innerHTML = (data.city_launch || []).map((row) => `
+    <article class="job-item">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(row.city)}</h3>
+          <p class="muted">Supply and launch readiness snapshot</p>
+        </div>
+      </div>
+      <div class="job-meta">
+        <span>${row.providers} providers</span>
+        <span>${row.skills} active skills</span>
+        <span>${row.completed_jobs} completed jobs</span>
+      </div>
+    </article>
+  `).join("") || `<div class="empty-state"><p class="muted">No city launch data yet.</p></div>`;
+}
+
+async function loadPromos() {
+  const response = await authFetch("/api/ops/admin/promos");
+  if (!response.ok) {
+    promoList.innerHTML = `<div class="empty-state"><p class="muted">${response.data?.error || "Unable to load promos."}</p></div>`;
+    return;
+  }
+
+  const items = response.data.items || [];
+  promoList.innerHTML = items.map((promo) => `
+    <article class="job-item">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(promo.code)}</h3>
+          <p class="muted">${escapeHtml(promo.title)}</p>
+        </div>
+        <span class="status-pill ${promo.active ? "status-confirmed" : "status-cancelled"}">${promo.active ? "Active" : "Inactive"}</span>
+      </div>
+      <div class="job-meta">
+        <span>${escapeHtml(promo.discount_type)}</span>
+        <span>${Number(promo.discount_value || 0).toFixed(0)} value</span>
+        <span>${promo.used_count || 0} used</span>
+        ${promo.usage_limit ? `<span>${promo.usage_limit} max</span>` : ""}
+      </div>
+    </article>
+  `).join("") || `<div class="empty-state"><p class="muted">No promos created yet.</p></div>`;
+}
+
+async function loadFlags() {
+  const response = await authFetch("/api/ops/admin/fraud-flags");
+  if (!response.ok) {
+    flagList.innerHTML = `<div class="empty-state"><p class="muted">${response.data?.error || "Unable to load fraud flags."}</p></div>`;
+    return;
+  }
+
+  const items = response.data.items || [];
+  flagList.innerHTML = items.map((flag) => `
+    <article class="job-item">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(flag.severity)}</h3>
+          <p class="muted">${escapeHtml(flag.reason)}</p>
+        </div>
+        <span class="status-pill status-pending">${escapeHtml(flag.status)}</span>
+      </div>
+      <div class="job-meta">
+        ${flag.user_id ? `<span>User ${flag.user_id}</span>` : ""}
+        ${flag.booking_id ? `<span>Booking ${flag.booking_id}</span>` : ""}
+        <span>${flag.created_at ? new Date(flag.created_at).toLocaleString() : "Just now"}</span>
+      </div>
+    </article>
+  `).join("") || `<div class="empty-state"><p class="muted">No fraud flags created yet.</p></div>`;
+}
+
+async function loadNotificationAdmin() {
+  const [templateResponse, deliveryResponse] = await Promise.all([
+    authFetch("/api/notifications/admin/templates"),
+    authFetch("/api/notifications/admin/deliveries"),
+  ]);
+
+  templateList.innerHTML = templateResponse.ok
+    ? Object.entries(templateResponse.data.items || {}).map(([key, value]) => `
+        <article class="job-item">
+          <div class="job-header">
+            <div>
+              <h3>${escapeHtml(key)}</h3>
+              <p class="muted">${escapeHtml(value.title || "")}</p>
+            </div>
+          </div>
+          <p class="muted">${escapeHtml(value.body || "")}</p>
+        </article>
+      `).join("") || `<div class="empty-state"><p class="muted">No templates available.</p></div>`
+    : `<div class="empty-state"><p class="muted">${escapeHtml(templateResponse.data?.error || "Unable to load templates.")}</p></div>`;
+
+  deliveryList.innerHTML = deliveryResponse.ok
+    ? (deliveryResponse.data.items || []).map((item) => `
+        <article class="job-item">
+          <div class="job-header">
+            <div>
+              <h3>${escapeHtml(item.template_key || "delivery")}</h3>
+              <p class="muted">${escapeHtml(item.channel || "channel")} / ${escapeHtml(item.status || "unknown")}</p>
+            </div>
+          </div>
+          <p class="muted">${escapeHtml(item.error_message || "No delivery error logged.")}</p>
+        </article>
+      `).join("") || `<div class="empty-state"><p class="muted">No delivery logs yet.</p></div>`
+    : `<div class="empty-state"><p class="muted">${escapeHtml(deliveryResponse.data?.error || "Unable to load delivery logs.")}</p></div>`;
+}
+
+document.getElementById("createPromoBtn").addEventListener("click", async () => {
+  const response = await authFetch("/api/ops/admin/promos", {
+    method: "POST",
+    body: JSON.stringify({
+      code: document.getElementById("promoCode").value,
+      title: document.getElementById("promoTitle").value,
+      discount_type: document.getElementById("promoType").value,
+      discount_value: Number(document.getElementById("promoValue").value || 0),
+    }),
+  });
+  if (response.ok) {
+    showMkToast(`Promo ${response.data.code} created`, "success");
+  } else {
+    showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+  }
+  loadPromos();
+});
+
+document.getElementById("createFlagBtn").addEventListener("click", async () => {
+  const response = await authFetch("/api/ops/admin/fraud-flags", {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: document.getElementById("flagUserId").value || null,
+      booking_id: document.getElementById("flagBookingId").value || null,
+      severity: document.getElementById("flagSeverity").value,
+      reason: document.getElementById("flagReason").value,
+    }),
+  });
+  if (response.ok) {
+    showMkToast("Fraud flag saved", "success");
+  } else {
+    showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+  }
+  loadFlags();
+  loadOverview();
+});
+
+loadOverview();
+loadPromos();
+loadFlags();
+loadNotificationAdmin();
+</script>
+{% endblock %}

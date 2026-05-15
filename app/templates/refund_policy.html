@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Refund Policy | Sklio{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Refund Policy</p>
+      <h1>Clear refund and cancellation outcomes for every major booking scenario.</h1>
+      <p class="muted hero-copy">
+        Refunds are tied to timing, job state, and evidence. The matrix below is designed to keep both seekers and providers protected while reducing avoidable support friction.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="card landing-section">
+  <div class="policy-table">
+    <div class="policy-table-row policy-table-head">
+      <span>Scenario</span>
+      <span>Seeker outcome</span>
+      <span>Provider outcome</span>
+      <span>Platform SLA</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Cancel more than 24 hours before service</span>
+      <span>100% refund</span>
+      <span>No payout</span>
+      <span>Refund initiated within 1 hour</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Cancel 2 to 24 hours before service</span>
+      <span>Refund minus 10%, minimum INR 100</span>
+      <span>No payout</span>
+      <span>Refund initiated within 1 hour</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Cancel less than 2 hours before service</span>
+      <span>Refund minus 25%, minimum INR 250</span>
+      <span>No payout</span>
+      <span>Refund initiated within 1 hour</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Provider cancels before service</span>
+      <span>100% refund plus INR 100 goodwill credit</span>
+      <span>No payout and reliability impact</span>
+      <span>Refund initiated within 1 hour</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Provider no-show</span>
+      <span>100% refund plus INR 150 goodwill credit</span>
+      <span>No payout</span>
+      <span>Initial review within 4 hours</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Seeker no-show after provider arrival</span>
+      <span>No automatic refund</span>
+      <span>Visit-fee or protected minimum may apply</span>
+      <span>Decision within 24 hours after evidence review</span>
+    </div>
+    <div class="policy-table-row">
+      <span>Disputed incomplete or poor work</span>
+      <span>Partial or full refund based on evidence</span>
+      <span>Partial, held, or zero payout depending on outcome</span>
+      <span>Initial review in 24 hours, final within 5 business days</span>
+    </div>
+  </div>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <h2>When refunds may be delayed</h2>
+    <p class="muted">Refunds may enter a pending state if the payment provider is slow, a dispute is open, or additional evidence is required.</p>
+  </article>
+  <article class="feature-card">
+    <h2>Dispute-first jobs</h2>
+    <p class="muted">For contested service quality, Sklio may offer rework, partial refund, or full refund depending on category, risk, and documented evidence.</p>
+  </article>
+  <article class="feature-card">
+    <h2>Off-platform payments</h2>
+    <p class="muted">If users move payment off-platform, Sklio may be unable to provide refund protection, support-backed evidence, or goodwill credits.</p>
+  </article>
+</section>
+{% endblock %}

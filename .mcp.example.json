@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "C:\\Python314\\Scripts\\code-review-graph.exe",
+      "args": ["serve"]
+    },
+    "stitch": {
+      "url": "https://stitch.googleapis.com/mcp?key=${STITCH_API_KEY}"
+    }
+  }
+}

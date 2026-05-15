@@ -1,6 +1,7 @@
 <!-- app/templates/worker_location_sender.html -->
 {% extends "base.html" %}
 
+{% block title %}Location Sharing | Sklio{% endblock %}
 {% block content %}
   <div class="card glass">
     <h2>Worker Live Location</h2>
@@ -36,6 +37,17 @@
     <p class="muted" style="margin-top:12px; font-size:12px;">
       Tip: Keep this page open while you’re on the way. We’ll update the seeker in real time.
     </p>
+
+    <!-- Cash Payment Confirmation Section -->
+    <div id="cashPaymentSection" class="card mk-card" style="margin-top:24px; border-left:4px solid #f59e0b; display:none;">
+      <h3 class="mk-heading" style="margin-top:0;">Cash Payment</h3>
+      <p class="mk-body-sm">Collected cash from the customer? Confirm here to close the booking.</p>
+      <div style="margin-top:12px; display:flex; gap:12px; align-items:center;">
+        <div style="font-size:20px; font-weight:700;">₹<span id="cashAmount">0.00</span></div>
+        <button id="btnConfirmCash" class="btn primary" style="background:#f59e0b; border:none; flex:1;">Confirm Collection</button>
+      </div>
+      <p class="muted" style="font-size:11px; margin-top:8px;">10% platform commission will be debited from your wallet.</p>
+    </div>
   </div>
 {% endblock %}
 
@@ -53,10 +65,12 @@
     crossorigin=""
   ></script>
 
-  <script>
+  <script type="module">
+    import { showMkToast, getToken } from "/static/js/main.js";
+
     const BOOKING_ID = {{ booking_id | tojson }};
     const ROOM = "booking_" + BOOKING_ID;
-    const token = localStorage.getItem('sklio_access_token') || null;
+    const token = getToken();
 
     let socket = null;
     let watchId = null;
@@ -117,7 +131,10 @@
         return;
       }
 
-      socket = io({ auth: { token } });
+      socket = io({ 
+        auth: { token },
+        transports: ["websocket", "polling"]
+      });
 
       socket.on('connect', () => {
         socket.emit('join', { room: ROOM });
@@ -125,16 +142,23 @@
         log("Connected to Sklio. You can start tracking.");
       });
 
-      socket.on('disconnect', () => {
-        setStatus("Disconnected. Check network.", "warn");
+      socket.on('disconnect', (reason) => {
+        setStatus("Disconnected. (" + reason + ")", "warn");
+      });
+
+      socket.on('connect_error', (err) => {
+        setStatus("Connection error", "error");
+        log("Socket connection error: " + err.message);
       });
     }
 
     function sendLocation(lat, lon, accuracy){
-      if (!socket || !socket.connected){
-        setStatus("Not connected to server.", "error");
-        log("Socket not connected.");
+      if (!socket){
+        setStatus("Not initialized.", "error");
         return;
+      }
+      if (!socket.connected) {
+        log("Connecting... location is buffered.");
       }
       const now = new Date();
       const timeStr = now.toLocaleTimeString();
@@ -151,7 +175,7 @@
 
     function startTrackingInternal(){
       if (!navigator.geolocation){
-        alert('Geolocation not supported on this device.');
+        showMkToast("Location sharing is not supported on this device.", "error");
         return;
       }
       if (watchId !== null) return; // already tracking
@@ -164,9 +188,8 @@
         const acc = pos.coords.accuracy || null;
         sendLocation(lat, lon, acc);
       }, err => {
-        console.error(err);
         setStatus("Error getting location.", "error");
-        alert('Error getting location: ' + err.message);
+        showMkToast(err?.message || "Location could not be fetched. Please try again.", "error");
       }, {
         enableHighAccuracy: true,
         maximumAge: 5000,
@@ -206,7 +229,7 @@
 
     function sendOnce(){
       if (!navigator.geolocation){
-        alert('Geolocation not supported on this device.');
+        showMkToast("Location sharing is not supported on this device.", "error");
         return;
       }
       navigator.geolocation.getCurrentPosition(pos => {
@@ -215,8 +238,7 @@
         const acc = pos.coords.accuracy || null;
         sendLocation(lat, lon, acc);
       }, err => {
-        console.error(err);
-        alert('Error getting location: ' + err.message);
+        showMkToast(err?.message || "Location could not be fetched. Please try again.", "error");
       }, {
         enableHighAccuracy: true,
         maximumAge: 5000,
@@ -224,9 +246,63 @@
       });
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    async function checkBookingStatus(){
+      const res = await fetch(`/api/bookings/${BOOKING_ID}`, {
+        headers: { Authorization: "Bearer " + token }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const status = data.status;
+      const payStatus = data.payment_status;
+
+      // Show cash section if in progress or completed and not paid online
+      if ((status === 'IN_PROGRESS' || status === 'COMPLETED') && payStatus === 'NONE') {
+        document.getElementById("cashPaymentSection").style.display = "block";
+        document.getElementById("cashAmount").textContent = Number(data.amount_payable || data.price).toFixed(2);
+      } else {
+        document.getElementById("cashPaymentSection").style.display = "none";
+      }
+    }
+
+    document.getElementById("btnConfirmCash").onclick = async () => {
+      if (!confirm("Confirm cash collection? This will finalize the booking.")) return;
+      
+      const btn = document.getElementById("btnConfirmCash");
+      btn.disabled = true;
+      btn.textContent = "...";
+
+      const res = await fetch(`/api/bookings/${BOOKING_ID}/cash-payment`, {
+        method: "POST",
+        headers: { 
+          Authorization: "Bearer " + token,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (res.ok) {
+        showMkToast("Payment confirmed", "success");
+        checkBookingStatus();
+      } else {
+        const err = await res.json();
+        showMkToast(err.error || "Failed to confirm", "error");
+        btn.disabled = false;
+        btn.textContent = "Confirm Collection";
+      }
+    };
+
+    try {
       initMap();
+      checkBookingStatus();
+    } catch (err) {
+      console.error("Map init failed:", err);
+    }
+    try {
       initSocket();
-    });
+    } catch (err) {
+      console.error("Socket init failed:", err);
+    }
+
+    window.toggleTracking = toggleTracking;
+    window.sendOnce = sendOnce;
   </script>
 {% endblock %}

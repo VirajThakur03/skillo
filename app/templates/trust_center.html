@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Trust & Safety | Sklio{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Trust Center</p>
+      <h1>Policies, protections, and marketplace standards in one place.</h1>
+      <p class="muted hero-copy">
+        This hub gives seekers, providers, and operators a clear view of how Sklio handles privacy, refunds, provider conduct, grievance redressal, and platform rules.
+      </p>
+    </div>
+
+    <div class="policy-nav">
+      <a class="btn primary small" href="{{ url_for('front.terms_page') }}">Terms</a>
+      <a class="btn ghost small" href="{{ url_for('front.privacy_page') }}">Privacy</a>
+      <a class="btn ghost small" href="{{ url_for('front.refund_policy_page') }}">Refund Policy</a>
+      <a class="btn ghost small" href="{{ url_for('front.provider_agreement_page') }}">Provider Agreement</a>
+      <a class="btn ghost small" href="{{ url_for('front.grievance_page') }}">Grievance Officer</a>
+    </div>
+  </div>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <p class="eyebrow">User Protection</p>
+    <h2>Clear booking rules before money moves.</h2>
+    <p class="muted">Cancellation windows, refund tiers, dispute escalation, and protected in-app communication are defined publicly so users are never guessing.</p>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Provider Standards</p>
+    <h2>Independent professionals with published conduct rules.</h2>
+    <p class="muted">Provider onboarding, verification, payout expectations, platform commission, and off-platform diversion rules are documented for accountability.</p>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Privacy And Compliance</p>
+    <h2>India-focused data handling with operational retention rules.</h2>
+    <p class="muted">Identity, booking, chat, payment, and dispute data follow a documented retention and access model aligned with Indian regulatory expectations.</p>
+  </article>
+</section>
+
+<section class="card landing-section">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Quick Links</p>
+      <h2>Most-used trust resources</h2>
+    </div>
+  </div>
+
+  <div class="policy-grid">
+    <a class="feature-card feature-link-card" href="{{ url_for('front.terms_page') }}">
+      <h3>Terms and Conditions</h3>
+      <p class="muted">Core platform rules for bookings, cancellations, account use, liability, and disputes.</p>
+    </a>
+    <a class="feature-card feature-link-card" href="{{ url_for('front.privacy_page') }}">
+      <h3>Privacy Policy</h3>
+      <p class="muted">What data we collect, how long we keep it, who we share it with, and what rights users can exercise.</p>
+    </a>
+    <a class="feature-card feature-link-card" href="{{ url_for('front.refund_policy_page') }}">
+      <h3>Refund Policy</h3>
+      <p class="muted">Full tiered refund matrix for seeker cancellations, provider no-shows, and disputed jobs.</p>
+    </a>
+    <a class="feature-card feature-link-card" href="{{ url_for('front.provider_agreement_page') }}">
+      <h3>Provider Agreement</h3>
+      <p class="muted">Independent contractor terms, conduct standards, verification, payouts, and termination triggers.</p>
+    </a>
+    <a class="feature-card feature-link-card" href="{{ url_for('front.grievance_page') }}">
+      <h3>Grievance Officer</h3>
+      <p class="muted">Complaint routes, acknowledgement windows, review SLAs, and escalation path for trust and legal issues.</p>
+    </a>
+  </div>
+</section>
+{% endblock %}

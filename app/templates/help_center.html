@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Help Center | Sklio{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Help Center</p>
+      <h1>Answers for booking, payments, quotes, chat, tracking, and provider onboarding.</h1>
+      <p class="muted hero-copy">
+        This public support surface is designed to reduce confusion before users ever need to open a ticket. It brings the product copy, trust rules, and recovery steps into one clear place.
+      </p>
+    </div>
+    <div class="policy-nav">
+      <a class="btn primary small" href="/seeker-onboarding">Seeker onboarding</a>
+      <a class="btn ghost small" href="/provider-onboarding">Provider onboarding</a>
+      <a class="btn ghost small" href="{{ url_for('front.trust_center_page') }}">Trust center</a>
+    </div>
+  </div>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <p class="eyebrow">Common Recovery</p>
+    <h2>Exact next steps when something fails.</h2>
+    <ul class="policy-bullets">
+      <li><strong>Payment failed:</strong> Your payment did not go through. Your slot is not confirmed yet.</li>
+      <li><strong>Upload failed:</strong> We couldn't upload that file. Check your connection or try a smaller file.</li>
+      <li><strong>Session timeout:</strong> For your security, you were signed out. Please log in again.</li>
+      <li><strong>Network error:</strong> The connection dropped. We could not complete that action.</li>
+    </ul>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Marketplace Support</p>
+    <h2>Best entry points by issue type.</h2>
+    <ul class="policy-bullets">
+      <li>Booking issue: use the booking tracker or dispute flow</li>
+      <li>Provider concern: use report or grievance path</li>
+      <li>Payout issue: providers should check membership, wallet, and payout status first</li>
+      <li>Trust/legal issue: use the grievance channel</li>
+    </ul>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Fast Links</p>
+    <h2>Jump straight to the right flow.</h2>
+    <div class="action-cluster">
+      <a class="btn ghost small" href="{{ url_for('front.demo_login') }}">Demo login</a>
+      <a class="btn ghost small" href="/quote-requests">Quote requests</a>
+      <a class="btn ghost small" href="/notifications">Notifications</a>
+      <a class="btn ghost small" href="{{ url_for('front.grievance_page') }}">Grievance</a>
+    </div>
+  </article>
+</section>
+
+<section class="card landing-section">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Frequently Asked Questions</p>
+      <h2>Top issues we should answer before support is needed</h2>
+    </div>
+  </div>
+
+  <div class="policy-grid">
+    <article class="feature-card">
+      <h3>What happens if a provider declines my booking?</h3>
+      <p class="muted">You will see similar providers and a structured quote option instead of losing your job details.</p>
+    </article>
+    <article class="feature-card">
+      <h3>Can I still book if I deny location access?</h3>
+      <p class="muted">Yes. Enter your area manually and continue with the same search and booking flow.</p>
+    </article>
+    <article class="feature-card">
+      <h3>When does chat become private?</h3>
+      <p class="muted">Public skill rooms are available before booking. Booking rooms become private to the seeker and assigned provider.</p>
+    </article>
+    <article class="feature-card">
+      <h3>How do refunds work?</h3>
+      <p class="muted">Refund timing depends on when the booking is cancelled and whether the job is disputed. The full matrix is published in Refund Policy.</p>
+    </article>
+    <article class="feature-card">
+      <h3>When can a provider go live?</h3>
+      <p class="muted">After identity verification, bank setup, availability publication, and agreement acceptance are complete.</p>
+    </article>
+    <article class="feature-card">
+      <h3>What if a dispute needs legal escalation?</h3>
+      <p class="muted">Use the grievance route for legal or trust escalations. Standard complaints are targeted for acknowledgement within 24 hours.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}

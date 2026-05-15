@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}AI Assistant | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">AI Assist</p>
+        <h1>Use the marketplace AI layer for intake, matching, chat summaries, and review signals.</h1>
+        <p class="muted">This workbench exposes the AI-oriented PRD features as practical UI tools without breaking the core booking stack.</p>
+      </div>
+      <a class="btn ghost" href="/home">Back to search</a>
+    </div>
+  </div>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Job intake</p>
+        <h2>Turn a messy request into a structured service draft</h2>
+      </div>
+      <button class="btn primary" id="runIntakeBtn" type="button">Analyze request</button>
+    </div>
+    <div class="form-stack">
+      <textarea id="intakeText" rows="5" placeholder="Example: AC is not cooling, maybe gas refill needed, tomorrow after 4 pm at my flat near City Mall."></textarea>
+      <input id="intakeCategory" placeholder="Optional category hint, for example electrician">
+    </div>
+    <div id="intakeResult" class="dashboard-note">
+      <strong>Parsed result</strong>
+      <p class="muted">Run the intake parser to see a structured request.</p>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Provider match</p>
+        <h2>Rank nearby providers using the AI scoring layer</h2>
+      </div>
+      <button class="btn primary" id="runMatchBtn" type="button">Find matches</button>
+    </div>
+    <div class="field-grid compact">
+      <input id="matchQuery" placeholder="Service need, for example electrician near me">
+      <input id="matchLocation" placeholder="Location or neighborhood">
+    </div>
+    <div id="matchResults" class="job-list"></div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Chat summary</p>
+        <h2>Extract the current room summary and suggested replies</h2>
+      </div>
+      <button class="btn primary" id="runChatSummaryBtn" type="button">Summarize room</button>
+    </div>
+    <input id="chatRoomInput" placeholder="Room id, for example booking_12 or skill_2">
+    <div id="chatSummaryResult" class="dashboard-note">
+      <strong>Room summary</strong>
+      <p class="muted">Enter a room id to summarize the latest messages.</p>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Review summary</p>
+        <h2>Translate raw reviews into trust signals</h2>
+      </div>
+      <button class="btn primary" id="runReviewSummaryBtn" type="button">Summarize reviews</button>
+    </div>
+    <input id="reviewProviderId" type="number" min="1" placeholder="Provider id">
+    <div id="reviewSummaryResult" class="dashboard-note">
+      <strong>Trust summary</strong>
+      <p class="muted">Enter a provider id to review the synthesized trust signals.</p>
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+const intakeResult = document.getElementById("intakeResult");
+const matchResults = document.getElementById("matchResults");
+const chatSummaryResult = document.getElementById("chatSummaryResult");
+const reviewSummaryResult = document.getElementById("reviewSummaryResult");
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+document.getElementById("runIntakeBtn").addEventListener("click", async () => {
+  const response = await authFetch("/api/ops/ai/job-intake", {
+    method: "POST",
+    body: JSON.stringify({
+      text: document.getElementById("intakeText").value,
+      selected_category: document.getElementById("intakeCategory").value || null,
+    }),
+  });
+  if (!response.ok) {
+    intakeResult.innerHTML = `<strong>Parsed result</strong><p class="muted">${escapeHtml(response.data?.error || "Unable to analyze request.")}</p>`;
+    return;
+  }
+
+  intakeResult.innerHTML = `
+    <strong>${escapeHtml(response.data.clean_title || "Service request")}</strong>
+    <p class="muted">${escapeHtml(response.data.clean_summary || "")}</p>
+    <div class="job-meta">
+      <span>Category: ${escapeHtml(response.data.recommended_category || "Unknown")}</span>
+      <span>Mode: ${escapeHtml(response.data.request_mode || "instant_booking")}</span>
+      <span>Urgency: ${escapeHtml(response.data.urgency || "low")}</span>
+      <span>Confidence: ${Number(response.data.confidence || 0).toFixed(2)}</span>
+    </div>
+    <p class="muted">Missing fields: ${escapeHtml((response.data.missing_fields || []).join(", ") || "None")}</p>
+    ${response.data.safety_flag ? `<p class="muted">Safety flag: ${escapeHtml(response.data.safety_reason || "Potentially hazardous issue detected.")}</p>` : ""}
+  `;
+});
+
+document.getElementById("runMatchBtn").addEventListener("click", async () => {
+  const query = document.getElementById("matchQuery").value.trim();
+  const location = document.getElementById("matchLocation").value.trim();
+  const searchResponse = await fetch(`/api/search/providers?q=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&limit=6`);
+  if (!searchResponse.ok) {
+    matchResults.innerHTML = `<div class="empty-state"><p class="muted">Unable to fetch provider candidates.</p></div>`;
+    return;
+  }
+
+  const searchData = await searchResponse.json();
+  const candidates = (searchData.items || []).map((item) => ({
+    provider_id: item.provider_id,
+    service_title: item.service_title,
+    description: item.description,
+    rating: item.rating,
+    distance_km: item.distance_km,
+    open_now: item.open_now,
+    next_available_at: item.next_available_at,
+    badges: item.verified_badges || [],
+  }));
+
+  const rankResponse = await authFetch("/api/ops/ai/provider-match", {
+    method: "POST",
+    body: JSON.stringify({
+      query_text: query,
+      candidates,
+    }),
+  });
+  if (!rankResponse.ok) {
+    matchResults.innerHTML = `<div class="empty-state"><p class="muted">${escapeHtml(rankResponse.data?.error || "Unable to rank providers.")}</p></div>`;
+    return;
+  }
+
+  const scores = rankResponse.data.scores || [];
+  const providerMap = new Map((searchData.items || []).map((item) => [item.provider_id, item]));
+  matchResults.innerHTML = scores.map((score) => {
+    const item = providerMap.get(score.provider_id) || {};
+    return `
+      <article class="job-item">
+        <div class="job-header">
+          <div>
+            <h3>${escapeHtml(item.provider_name || `Provider ${score.provider_id}`)}</h3>
+            <p class="muted">${escapeHtml(score.reason || "Relevant match.")}</p>
+          </div>
+          <span class="status-pill status-confirmed">Score ${Number(score.overall_score || 0).toFixed(1)}</span>
+        </div>
+        <div class="job-meta">
+          <span>${escapeHtml(item.service_title || "Service")}</span>
+          <span>Rating ${Number(item.rating || 0).toFixed(1)}</span>
+          ${item.distance_km != null ? `<span>${Number(item.distance_km).toFixed(1)} km</span>` : ""}
+          <span>${item.open_now ? "Open now" : "Availability on request"}</span>
+        </div>
+        <div class="job-route-actions">
+          <a class="btn primary" href="/booking/${item.skill_id}?provider=${item.provider_id}">Book</a>
+          <a class="btn ghost" href="/quote-requests?skill_id=${item.skill_id}&provider_id=${item.provider_id}&service_title=${encodeURIComponent(item.service_title || "")}">Quote</a>
+          <a class="btn ghost" href="/skill/${item.skill_id}">Profile</a>
+        </div>
+      </article>
+    `;
+  }).join("");
+});
+
+document.getElementById("runChatSummaryBtn").addEventListener("click", async () => {
+  const room = document.getElementById("chatRoomInput").value.trim();
+  const response = await authFetch("/api/ops/ai/chat-summary", {
+    method: "POST",
+    body: JSON.stringify({ room }),
+  });
+  if (!response.ok) {
+    chatSummaryResult.innerHTML = `<strong>Room summary</strong><p class="muted">${escapeHtml(response.data?.error || "Unable to summarize the room.")}</p>`;
+    return;
+  }
+
+  chatSummaryResult.innerHTML = `
+    <strong>${escapeHtml(response.data.summary || "Room summary")}</strong>
+    <div class="job-meta">
+      <span>Time: ${escapeHtml(response.data.extracted?.mentioned_time || "Not found")}</span>
+      <span>Address: ${escapeHtml(response.data.extracted?.mentioned_address || "Not found")}</span>
+    </div>
+    <p class="muted">Action items: ${escapeHtml((response.data.extracted?.action_items || []).join(", ") || "None")}</p>
+    <p class="muted">Suggested replies: ${escapeHtml((response.data.reply_suggestions || []).join(" / ") || "None")}</p>
+  `;
+});
+
+document.getElementById("runReviewSummaryBtn").addEventListener("click", async () => {
+  const providerId = Number(document.getElementById("reviewProviderId").value);
+  const response = await fetch(`/api/ops/ai/review-summary/${providerId}`);
+  if (!response.ok) {
+    reviewSummaryResult.innerHTML = `<strong>Trust summary</strong><p class="muted">Unable to summarize reviews for that provider.</p>`;
+    return;
+  }
+
+  const data = await response.json();
+  reviewSummaryResult.innerHTML = `
+    <strong>${escapeHtml(data.summary || "Review summary")}</strong>
+    <div class="job-meta">
+      <span>Punctuality: ${escapeHtml(data.trust_signals?.punctuality || "n/a")}</span>
+      <span>Quality: ${escapeHtml(data.trust_signals?.quality || "n/a")}</span>
+      <span>Communication: ${escapeHtml(data.trust_signals?.communication || "n/a")}</span>
+      <span>Value: ${escapeHtml(data.trust_signals?.value || "n/a")}</span>
+    </div>
+    <p class="muted">Evidence: ${escapeHtml((data.evidence_phrases || []).join(", ") || "No repeated phrases yet.")}</p>
+  `;
+});
+</script>
+{% endblock %}

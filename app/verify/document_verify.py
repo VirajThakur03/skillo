@@ -1,14 +1,34 @@
 import re
 import os
 from PIL import Image
-import pytesseract
-from pdf2image import convert_from_path
-import cv2
-import numpy as np
+
+try:
+    import pytesseract
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    pytesseract = None
+
+try:
+    from pdf2image import convert_from_path
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    convert_from_path = None
+
+try:
+    import cv2
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    cv2 = None
+
+
+def _ensure_ocr_dependencies():
+    if pytesseract is None:
+        raise Exception("OCR dependency missing: pytesseract is not installed")
+    if convert_from_path is None:
+        raise Exception("OCR dependency missing: pdf2image is not installed")
 
 def extract_text(file_path):
     if not os.path.exists(file_path):
         raise Exception("File does not exist")
+
+    _ensure_ocr_dependencies()
 
     text = ""
 
@@ -37,15 +57,18 @@ def validate_document(text, doc_type):
         return bool(re.search(r"\b\d{4}\s?\d{4}\s?\d{4}\b", text))
 
     if doc_type == "driving":
-        return bool(re.search(r"[A-Z]{2}\d{2}\s?\d{11}", text))
+        return bool(re.search(r"[A-Z]{2}\d{2}\s?\d{11}", text, re.IGNORECASE))
 
     if doc_type == "passport":
-        return bool(re.search(r"[A-Z]\d{7}", text))
+        return bool(re.search(r"[A-Z]\d{7}", text, re.IGNORECASE))
 
     return True
 
 
 def is_blurry(file_path, threshold=100):
+    if cv2 is None:
+        return False
+
     # File does not exist
     if not os.path.exists(file_path):
         return False
@@ -64,6 +87,9 @@ def is_blurry(file_path, threshold=100):
 
 
 def is_screenshot(file_path):
+    if cv2 is None:
+        return False
+
     if not os.path.exists(file_path):
         return False
 

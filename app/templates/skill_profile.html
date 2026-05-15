@@ -1,22 +1,43 @@
 {% extends "base.html" %}
 
+{% block title %}Skill Details | Sklio{% endblock %}
 {% block content %}
-  <div class="profile">
+  <div class="profile mk-fade-in">
     <div class="profile-left">
-      <div class="avatar big">{{ provider.name[0]|upper }}</div>
-
-      <h2>{{ provider.name }}</h2>
-      <p class="muted">{{ provider.location }}</p>
-
-      <p>
-        ⭐ {{ '%.1f'|format(provider.rating or 0) }}
-        ({{ provider.completed_jobs or 0 }} jobs)
-      </p>
-
-      {% if provider.is_verified %}
-        <p>✅ Verified provider</p>
+      {% if provider.profile_photo_url %}
+        <img src="{{ provider.profile_photo_url if provider.profile_photo_url.startswith('http') else '/api/system/upload?ref=' + provider.profile_photo_url }}" class="avatar big" style="object-fit:cover; display:block;" alt="{{ provider.name }}'s Profile Photo" />
+      {% else %}
+        <div class="avatar big">{{ provider.name[0]|upper }}</div>
       {% endif %}
 
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <h2 class="mk-display-md" style="margin:0;">{{ provider.name }}</h2>
+        <button type="button" class="mk-favorite-btn" data-mk-favorite-for="{{ provider.id }}" aria-label="Save provider" title="Save provider">
+          <i data-lucide="heart"></i>
+        </button>
+      </div>
+      <p class="mk-body-sm">{{ provider.location }}</p>
+
+      <div class="mk-provider-stats-row" aria-label="Provider stats">
+        {% if provider_metrics.response_label %}
+        <span>Replies in {{ provider_metrics.response_label }}</span>
+        <span class="mk-stats-sep" aria-hidden="true">|</span>
+        {% endif %}
+        {% if provider_metrics.acceptance_rate is not none %}
+        <span>{{ '%.0f'|format(provider_metrics.acceptance_rate) }}% acceptance</span>
+        <span class="mk-stats-sep" aria-hidden="true">|</span>
+        {% endif %}
+        <span>⭐ {{ '%.1f'|format(provider.rating or 0) }}</span>
+        <span class="mk-stats-sep" aria-hidden="true">|</span>
+        <span>{{ provider.completed_jobs or 0 }} jobs</span>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+        {% if provider.is_verified %}
+          <span class="mk-badge" data-type="verified"><i data-lucide="shield-check" style="width:12px;height:12px;"></i>Verified</span>
+        {% endif %}
+        <span class="mk-badge" style="background:var(--brand-100); color:var(--brand-700);"><i data-lucide="award" style="width:12px;height:12px;"></i>Trust Score: {{ provider.trust_score or 0 }}</span>
+      </div>
       {% if provider.badges %}
         <p>
           Badges:
@@ -31,13 +52,20 @@
       <h1>{{ skill.title }}</h1>
       <p>{{ skill.description }}</p>
 
-      <p class="price">Price: ₹{{ '%.0f'|format(skill.price) }}</p>
+      <p class="mk-price-lg">₹{{ '%.0f'|format(skill.price) }}</p>
 
       <div class="actions">
-        <a class="btn primary"
-           href="{{ url_for('front.booking_page', skill_id=skill.id) }}">
-          Book Now
-        </a>
+        {% if is_accepting_bookings %}
+          <a class="btn primary"
+             data-testid="book-now-btn"
+             href="{{ url_for('front.booking_page', skill_id=skill.id) }}?provider={{ provider.id }}">
+            Book Now
+          </a>
+        {% else %}
+          <button class="btn disabled" disabled title="Provider is currently offline">
+            Offline
+          </button>
+        {% endif %}
 
         <a class="btn ghost"
            href="{{ url_for('front.chat_page', room='skill_' ~ skill.id) }}">
@@ -51,18 +79,104 @@
 
       <hr>
 
+      {% if provider.portfolio_images and provider.portfolio_images|length > 0 %}
+      <div style="margin-top: 16px;">
+         <h3 style="margin-bottom: 8px;">Portfolio</h3>
+         <div class="portfolio-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px;">
+            {% for img_ref in provider.portfolio_images %}
+               <div class="portfolio-item" onclick="openLightbox({{ loop.index0 }})" style="aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; border: 1px solid var(--brand-100);">
+                  <img src="{{ img_ref if img_ref.startswith('http') else '/api/system/upload?ref=' ~ img_ref }}" style="width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" />
+               </div>
+            {% endfor %}
+         </div>
+      </div>
+      <hr style="margin-top: 16px;">
+      {% endif %}
+
       <h3>Reviews</h3>
-      <p class="muted">
-        Reviews will appear here.  
-        API ready: <code>/api/bookings/&lt;id&gt;/review</code>.
-      </p>
+      {% if reviews %}
+        <div style="display:grid; gap:10px; margin-top:8px;">
+          {% for r in reviews %}
+            <div class="mk-card" style="padding:10px;">
+              <div class="mk-body-sm">⭐ {{ '%.1f'|format(r.rating or 0) }}</div>
+              <div class="mk-body-sm">{{ r.comment or "No comment provided." }}</div>
+              <div class="mk-label">{{ r.created_at.strftime('%d %b %Y') if r.created_at else "" }}</div>
+              {% if r.provider_reply %}
+                <div class="mk-card" style="margin-top:10px;padding:10px;border-left:3px solid var(--brand-200);background:var(--brand-50);">
+                  <div class="mk-label-upper">Response from {{ provider.name }}</div>
+                  <div class="mk-body-sm">{{ r.provider_reply }}</div>
+                </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">No reviews yet. Completed jobs can be reviewed by seekers.</p>
+      {% endif %}
     </div>
   </div>
+  <div class="mk-book-bar">
+    <div>
+      <div class="mk-price">₹{{ '%.0f'|format(skill.price) }}</div>
+      <div class="mk-body-sm" id="stickyNextSlot">Checking next slot…</div>
+    </div>
+    {% if is_accepting_bookings %}
+      <a class="btn primary" data-testid="book-now-btn-sticky" href="{{ url_for('front.booking_page', skill_id=skill.id) }}?provider={{ provider.id }}">Book now</a>
+    {% else %}
+      <button class="btn disabled" disabled>Offline</button>
+    {% endif %}
+  </div>
+
+  <script>
+    (function() {
+      const token = localStorage.getItem('sklio_access_token') || localStorage.getItem('skl_token');
+      const el = document.getElementById('stickyNextSlot');
+      if (!el) return;
+      const pid = {{ provider.id }};
+      const sid = {{ skill.id }};
+      fetch('/api/availability/providers/' + pid + '?skill_id=' + sid, {
+        headers: token ? { Authorization: 'Bearer ' + token } : {}
+      }).then(r => r.ok ? r.json() : null).then(data => {
+        if (!data || !data.length) {
+          el.textContent = 'No slots available';
+          return;
+        }
+        const slot = data[0];
+        const d = new Date(slot.start || slot.date || slot);
+        el.textContent = isNaN(d) ? (slot.start || slot.date || String(slot)) : d.toLocaleString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      }).catch(() => { el.textContent = 'Check availability'; });
+    })();
+  </script>
+
+  {% if provider.portfolio_images and provider.portfolio_images|length > 0 %}
+  <!-- Lightbox Modal -->
+  <div id="portfolioLightbox" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; flex-direction: column;">
+    <button onclick="closeLightbox()" class="btn icon-only" style="position: absolute; top: 20px; right: 20px; color: white; background: rgba(255,255,255,0.2); border-radius: 50%;"><i data-lucide="x"></i></button>
+    
+    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 800px; padding: 0 20px;">
+       <button id="lbPrev" onclick="navigateLightbox(-1)" class="btn icon-only" style="color: white; background: rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; flex-shrink: 0;"><i data-lucide="chevron-left"></i></button>
+       <img id="lbImage" style="max-width: calc(100% - 100px); max-height: 80vh; object-fit: contain; border-radius: 4px;" src="" />
+       <button id="lbNext" onclick="navigateLightbox(1)" class="btn icon-only" style="color: white; background: rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; flex-shrink: 0;"><i data-lucide="chevron-right"></i></button>
+    </div>
+    <div id="lbCounter" style="color: white; margin-top: 16px; font-size: 14px; opacity: 0.8;"></div>
+  </div>
+  {% endif %}
+
 {% endblock %}
 
 {% block scripts %}
-<script>
-  function shareSkill(){
+<script type="module">
+  import { bindFavoriteButtons, applyFavoriteSavedState } from "/static/js/favorites.js";
+  document.addEventListener("DOMContentLoaded", async () => {
+    bindFavoriteButtons(document);
+    await applyFavoriteSavedState(document);
+    if (window.lucide) window.lucide.createIcons();
+  });
+</script>
+<script type="module">
+  import { showMkToast } from "/static/js/main.js";
+
+  window.shareSkill = function shareSkill(){
     const url = window.location.href;
     if (navigator.share){
       navigator.share({
@@ -71,9 +185,39 @@
       });
     } else {
       navigator.clipboard.writeText(url)
-        .then(() => alert('Link copied to clipboard!'))
-        .catch(() => alert('Copy failed'));
+        .then(() => showMkToast("Copied to clipboard", "success"))
+        .catch(() => showMkToast("Connection error. Check your internet and try again.", "error"));
     }
+  };
+</script>
+<script type="module">
+  import { showMkToast } from "/static/js/main.js";
+
+  {% if provider.portfolio_images and provider.portfolio_images|length > 0 %}
+  const portfolioImages = {{ provider.portfolio_images|tojson }}.map(ref => ref.startsWith('http') ? ref : '/api/system/upload?ref=' + encodeURIComponent(ref));
+  let currentLbIndex = 0;
+
+  window.openLightbox = function(index) {
+     currentLbIndex = index;
+     document.getElementById("portfolioLightbox").style.display = "flex";
+     updateLightbox();
+  };
+
+  window.closeLightbox = function() {
+     document.getElementById("portfolioLightbox").style.display = "none";
+  };
+
+  window.navigateLightbox = function(dir) {
+     currentLbIndex += dir;
+     if (currentLbIndex < 0) currentLbIndex = portfolioImages.length - 1;
+     if (currentLbIndex >= portfolioImages.length) currentLbIndex = 0;
+     updateLightbox();
+  };
+
+  function updateLightbox() {
+     document.getElementById("lbImage").src = portfolioImages[currentLbIndex];
+     document.getElementById("lbCounter").innerText = `${currentLbIndex + 1} / ${portfolioImages.length}`;
   }
+  {% endif %}
 </script>
 {% endblock %}

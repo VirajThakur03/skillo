@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Contact Support — Sklio{% endblock %}
+{% block og_title %}Contact Support — Sklio{% endblock %}
+{% block og_description %}Get in touch with the Sklio team. We are here to help.{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 40px auto; padding: 32px;">
+    <h1 style="margin-bottom: 8px;">Contact Support</h1>
+    <p style="color: var(--text-2); margin-bottom: 24px;">Have a question or need help? Send us a message and we'll get back to you as soon as possible.</p>
+
+    <div id="contact-alert" style="display:none; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-weight: 500;"></div>
+
+    <form id="contact-form" onsubmit="submitContact(event)">
+        <div class="form-group" style="margin-bottom: 16px;">
+            <label for="contact-name" style="display: block; margin-bottom: 4px; font-weight: 500;">Name</label>
+            <input type="text" id="contact-name" required style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 16px;">
+            <label for="contact-email" style="display: block; margin-bottom: 4px; font-weight: 500;">Email Address</label>
+            <input type="email" id="contact-email" required style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 24px;">
+            <label for="contact-message" style="display: block; margin-bottom: 4px; font-weight: 500;">Message</label>
+            <textarea id="contact-message" rows="5" required style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; resize: vertical;"></textarea>
+        </div>
+
+        <button type="submit" class="btn primary" id="contact-submit" style="width: 100%;">Send Message</button>
+    </form>
+</div>
+
+<script>
+async function submitContact(e) {
+    e.preventDefault();
+    const btn = document.getElementById('contact-submit');
+    const alertBox = document.getElementById('contact-alert');
+    const name = document.getElementById('contact-name').value;
+    const email = document.getElementById('contact-email').value;
+    const message = document.getElementById('contact-message').value;
+
+    btn.disabled = true;
+    btn.textContent = "Sending...";
+    alertBox.style.display = "none";
+
+    try {
+        const res = await fetch('/contact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, message })
+        });
+        
+        const data = await res.json();
+        
+        alertBox.style.display = "block";
+        if(res.ok) {
+            alertBox.style.backgroundColor = "var(--success-light)";
+            alertBox.style.color = "var(--success-dark)";
+            alertBox.textContent = data.message || "Message sent successfully!";
+            document.getElementById('contact-form').reset();
+        } else {
+            alertBox.style.backgroundColor = "var(--danger-light)";
+            alertBox.style.color = "var(--danger-dark)";
+            alertBox.textContent = data.error || "Failed to send message.";
+        }
+    } catch (err) {
+        alertBox.style.display = "block";
+        alertBox.style.backgroundColor = "var(--danger-light)";
+        alertBox.style.color = "var(--danger-dark)";
+        alertBox.textContent = "A network error occurred. Please try again.";
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Send Message";
+    }
+}
+</script>
+{% endblock %}

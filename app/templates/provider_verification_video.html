@@ -1,26 +1,35 @@
 {% extends "base.html" %}
+{% block title %}Video Verification | Sklio{% endblock %}
 {% block content %}
-  <div class="card glass">
-    <h2>Video Verification</h2>
-    <p class="muted">
-      Record a 5-second selfie saying:<br>
-      <b>"Hi, my name is &lt;your name&gt; and I confirm my identity."</b>
+<section class="section">
+  <div class="card mk-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <span class="mk-label">Step 3 of 3 - Face Video</span>
+      <span class="mk-label">100%</span>
+    </div>
+    <div class="mk-kyc-progress-bar" style="margin-bottom:12px;">
+      <div class="mk-kyc-progress-fill" style="transform:scaleX(1);"></div>
+    </div>
+    <div class="badge-row">
+      <span class="chip">KYC step 3 of 3</span>
+      <span class="chip">Face video</span>
+    </div>
+    <h2 class="mk-display-md">Video verification</h2>
+    <p class="mk-body-sm">
+      Record a short selfie video saying:
+      <strong>"Hi, my name is &lt;your name&gt; and I confirm my identity."</strong>
     </p>
 
-    <video
-      id="preview"
-      autoplay
-      playsinline
-      muted
-      style="width:100%; border-radius:12px; background:#000;"
-    ></video>
+    <video id="preview" autoplay playsinline muted style="width:100%; border-radius:12px; background:#0f172a; min-height:280px;"></video>
 
-    <div style="margin-top:12px;">
-      <button class="btn neon" id="recordBtn">Start Recording</button>
+    <div class="actions" style="margin-top:12px; gap:8px; flex-wrap:wrap;">
+      <button class="btn primary" id="recordBtn" type="button">Start recording</button>
+      <button class="btn ghost" id="retryBtn" type="button" style="display:none;">Retake video</button>
     </div>
 
-    <p id="status" class="muted" style="margin-top:8px;"></p>
+    <p id="status" class="mk-body-sm" style="margin-top:12px;"></p>
   </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -29,157 +38,211 @@
   let stream = null;
   let chunks = [];
   let recording = false;
-  let timer = null;
+  let countdownTimer = null;
+  let uploading = false;
 
-  const preview   = document.getElementById("preview");
+  const preview = document.getElementById("preview");
   const recordBtn = document.getElementById("recordBtn");
-  const statusEl  = document.getElementById("status");
+  const retryBtn = document.getElementById("retryBtn");
+  const statusEl = document.getElementById("status");
 
-  // 🎥 Init / reset camera
-  async function initCamera() {
-    cleanup();
+  function setStatus(message) {
+    statusEl.innerText = message;
+  }
+
+  function pickMimeType() {
+    const candidates = [
+      "video/mp4;codecs=avc1,mp4a",
+      "video/mp4",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ];
+    for (const candidate of candidates) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidate)) {
+        return candidate;
+      }
+    }
+    return "";
+  }
+
+  async function stopStream() {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+    }
+    preview.srcObject = null;
+  }
+
+  async function prepareCamera() {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setStatus("This browser does not support video verification. Please use Chrome or Edge.");
+      recordBtn.disabled = true;
+      return false;
+    }
+
+    await stopStream();
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
+        video: { facingMode: "user" },
+        audio: true,
       });
-
       preview.srcObject = stream;
-
-      mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "video/webm;codecs=vp8,opus"
-      });
-
-      mediaRecorder.ondataavailable = e => {
-        if (e.data && e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      mediaRecorder.onstop = uploadVideo;
-
-    } catch (err) {
-      statusEl.innerText = "Camera / mic permission denied";
+      return true;
+    } catch (error) {
+      setStatus("Camera or microphone permission is required to continue.");
       recordBtn.disabled = true;
+      return false;
     }
   }
 
-  // 🧹 Cleanup camera + timers
-  function cleanup() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
+  function resetRecorderState() {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
     }
-
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.stop();
-    }
-
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
-    }
-
     mediaRecorder = null;
     chunks = [];
     recording = false;
+    uploading = false;
   }
 
-  // ⏺ Start recording (5 sec)
-  async function startRecording() {
-    if (recording) return;
+  async function beginRecording() {
+    if (recording || uploading) return;
 
-    await initCamera();
+    const ready = await prepareCamera();
+    if (!ready) return;
+
+    const mimeType = pickMimeType();
+    try {
+      mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+    } catch (error) {
+      setStatus("Video recorder could not start on this device. Please retry in Chrome or Edge.");
+      return;
+    }
 
     chunks = [];
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    };
+    mediaRecorder.onstop = uploadVideo;
+
     recording = true;
     recordBtn.disabled = true;
-    recordBtn.innerText = "Recording…";
+    retryBtn.style.display = "none";
+    setStatus("Recording... 5s");
 
-    let seconds = 5;
-    statusEl.innerText = `Recording… ${seconds}s`;
-
+    let secondsLeft = 5;
     mediaRecorder.start();
 
-    timer = setInterval(() => {
-      seconds--;
-      statusEl.innerText = `Recording… ${seconds}s`;
-
-      if (seconds <= 0) {
-        clearInterval(timer);
-        timer = null;
+    countdownTimer = setInterval(() => {
+      secondsLeft -= 1;
+      if (secondsLeft > 0) {
+        setStatus(`Recording... ${secondsLeft}s`);
+        return;
+      }
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        setStatus("Uploading video...");
         mediaRecorder.stop();
-        statusEl.innerText = "Uploading video…";
       }
     }, 1000);
   }
 
-  // ⬆️ Upload video
   async function uploadVideo() {
     recording = false;
+    uploading = true;
     recordBtn.disabled = true;
 
-    const blob = new Blob(chunks, { type: "video/webm" });
-    const form = new FormData();
-    form.append("file", blob, "verification.webm");
+    const detectedType = (chunks[0] && chunks[0].type) || (mediaRecorder && mediaRecorder.mimeType) || pickMimeType() || "video/webm";
+    const blob = new Blob(chunks, { type: detectedType });
+    const filename = detectedType.includes("mp4")
+      ? "verification.mp4"
+      : detectedType.includes("quicktime")
+        ? "verification.mov"
+        : "verification.webm";
 
-    const token = localStorage.getItem("sklio_access_token");
-    if (!token) {
-      alert("Session expired. Please login again.");
+    if (!blob.size) {
+      resetRecorderState();
+      retryBtn.style.display = "inline-flex";
+      recordBtn.disabled = false;
+      setStatus("Video capture failed. Please retake the video.");
       return;
     }
 
+    const token = localStorage.getItem("sklio_access_token");
+    if (!token) {
+      window.location.replace("/demo_login");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("file", blob, filename);
+
     try {
-      const res = await fetch("/api/auth/upload_verification_video", {
+      const response = await fetch("/api/auth/upload_verification_video", {
         method: "POST",
-        headers: {
-          Authorization: "Bearer " + token
-        },
-        body: form
+        headers: { Authorization: "Bearer " + token },
+        body: form,
       });
+      const data = await response.json().catch(() => ({}));
 
-      const data = await res.json();
+      if (!response.ok) {
+        retryBtn.style.display = "inline-flex";
+        recordBtn.disabled = false;
 
-      if (!res.ok) {
-
-        // 🔥 SPECIAL CASE: selfie is required
-        if (data.error === "Selfie required for PDF or no-face documents") {
-          cleanup();
-          statusEl.innerText = "Selfie required. Redirecting…";
-
-          // ⛔ remove this page from history
-          setTimeout(() => {
-            window.location.replace("/provider_verification_selfie");
-          }, 700);
-
+        if (data.error === "document verification required") {
+          setStatus("Document verification is required first. Redirecting...");
+          setTimeout(() => window.location.replace("/provider_verification"), 900);
           return;
         }
 
-        // ❌ Normal failure → allow retry
-        cleanup();
-        recordBtn.disabled = false;
-        recordBtn.innerText = "Retake Video";
-        statusEl.innerText = data.error || "Verification failed";
+        if (data.error === "Selfie required for PDF or no-face documents") {
+          setStatus("A selfie is required before video verification. Redirecting...");
+          setTimeout(() => window.location.replace("/provider_verification_selfie"), 900);
+          return;
+        }
+
+        setStatus(data.error || "Verification failed. Please retake the video.");
         return;
       }
 
-
-      statusEl.innerText = "Face verified successfully ✔";
-
-      // ✅ Prevent back-button leak
+      setStatus("Face verified successfully. Redirecting...");
+      await stopStream();
       setTimeout(() => {
         window.location.replace("/confirm_location");
       }, 900);
-
-    } catch (err) {
-      cleanup();
+    } catch (error) {
+      retryBtn.style.display = "inline-flex";
       recordBtn.disabled = false;
-      recordBtn.innerText = "Retake Video";
-      statusEl.innerText = "Network error. Please try again.";
+      setStatus("Network error while uploading. Please retake the video.");
+    } finally {
+      resetRecorderState();
     }
   }
 
-  recordBtn.addEventListener("click", startRecording);
+  recordBtn.addEventListener("click", beginRecording);
+  retryBtn.addEventListener("click", async () => {
+    retryBtn.style.display = "none";
+    recordBtn.disabled = false;
+    setStatus("Ready to record again.");
+    await prepareCamera();
+  });
+
+  window.addEventListener("beforeunload", () => {
+    stopStream();
+  });
+
+  prepareCamera().then((ready) => {
+    if (ready) {
+      setStatus("Camera ready. Record a clear 5-second video.");
+    }
+  });
 </script>
 {% endblock %}

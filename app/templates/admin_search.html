@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Search | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Admin Search</p>
+        <h1>Read-only search across users, bookings, and their audit trails.</h1>
+        <p class="muted">Search is limited to admins and designed for support, trust, and ops review without direct edit controls.</p>
+      </div>
+      <div class="action-cluster">
+        <a class="btn ghost" href="/ops-dashboard">Open ops dashboard</a>
+        <button class="btn ghost" type="button" disabled title="Coming in admin v2">Export CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Directory</p>
+        <h2>Search users and bookings</h2>
+      </div>
+    </div>
+    <div class="badge-row" style="margin-bottom:16px;">
+      <button class="btn primary" type="button" data-admin-tab="users">Users</button>
+      <button class="btn ghost" type="button" data-admin-tab="bookings">Bookings</button>
+    </div>
+    <div class="field-grid">
+      <div>
+        <label class="mk-label" for="adminSearchInput">Search</label>
+        <input id="adminSearchInput" placeholder="Enter at least 3 characters">
+      </div>
+      <div id="bookingStatusWrap" hidden>
+        <label class="mk-label" for="adminBookingStatus">Booking status</label>
+        <select id="adminBookingStatus">
+          <option value="">All statuses</option>
+          <option value="PENDING">Pending</option>
+          <option value="CONFIRMED">Confirmed</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+          <option value="DECLINED">Declined</option>
+        </select>
+      </div>
+    </div>
+    <p id="adminSearchHint" class="muted" style="margin-top:8px;">Type 3 or more characters to search.</p>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Results</p>
+        <h2 id="adminResultsTitle">Users</h2>
+      </div>
+    </div>
+    <div id="adminResults" class="job-list"></div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, getCurrentUser, showMkToast } from "/static/js/main.js";
+
+const searchInput = document.getElementById("adminSearchInput");
+const resultsEl = document.getElementById("adminResults");
+const resultsTitleEl = document.getElementById("adminResultsTitle");
+const hintEl = document.getElementById("adminSearchHint");
+const bookingStatusWrap = document.getElementById("bookingStatusWrap");
+const bookingStatusInput = document.getElementById("adminBookingStatus");
+
+let activeTab = "users";
+let searchTimer = null;
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function setTab(nextTab) {
+  activeTab = nextTab;
+  resultsTitleEl.textContent = nextTab === "users" ? "Users" : "Bookings";
+  bookingStatusWrap.hidden = nextTab !== "bookings";
+  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
+    button.className = button.dataset.adminTab === nextTab ? "btn primary" : "btn ghost";
+  });
+  resultsEl.innerHTML = "";
+  if ((searchInput.value || "").trim().length >= 3) {
+    runSearch();
+  }
+}
+
+function renderAuditLog(entries = []) {
+  if (!entries.length) {
+    return `<p class="muted">No audit log entries yet.</p>`;
+  }
+  return entries.map((entry) => `
+    <article class="job-item">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(entry.event_type)}</h3>
+          <p class="muted">${entry.created_at ? new Date(entry.created_at).toLocaleString() : "Unknown time"}</p>
+        </div>
+        <span class="status-pill status-confirmed">${escapeHtml(entry.actor_role || "system")}</span>
+      </div>
+      <p class="muted">${escapeHtml(JSON.stringify(entry.metadata || {}))}</p>
+    </article>
+  `).join("");
+}
+
+function renderUserResults(items = []) {
+  if (!items.length) {
+    resultsEl.innerHTML = `<div class="empty-state"><p class="muted">No users matched that search.</p></div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = items.map((item) => `
+    <article class="job-item" data-admin-user="${item.id}">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(item.display_name || "Unnamed user")}</h3>
+          <p class="muted">${escapeHtml(item.email_masked || item.email || "No email")}</p>
+        </div>
+        <span class="status-pill ${item.is_suspended ? "status-cancelled" : "status-confirmed"}">${item.is_suspended ? "Suspended" : "Active"}</span>
+      </div>
+      <div class="job-meta">
+        <span>${escapeHtml(item.role || "unknown")}</span>
+        <span>${escapeHtml(item.kyc_status || "no kyc")}</span>
+        <span>${item.booking_count || 0} bookings</span>
+        <span>${item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown join date"}</span>
+      </div>
+      <div class="job-route-actions">
+        <button class="btn ghost" type="button" data-admin-user-open="${item.id}">Open detail</button>
+      </div>
+      <div id="admin-user-detail-${item.id}" style="display:none;margin-top:12px;"></div>
+    </article>
+  `).join("");
+
+  document.querySelectorAll("[data-admin-user-open]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const userId = button.dataset.adminUserOpen;
+      const panel = document.getElementById(`admin-user-detail-${userId}`);
+      if (panel.style.display === "block") {
+        panel.style.display = "none";
+        return;
+      }
+      const response = await authFetch(`/api/ops/admin/users/${userId}`);
+      if (!response.ok) {
+        showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+        return;
+      }
+      const detail = response.data;
+      panel.innerHTML = `
+        <div class="dashboard-note">
+          <p class="muted">${escapeHtml(detail.user.email_masked || detail.user.email || "")} · ${escapeHtml(detail.user.phone_masked || detail.user.phone || "No phone")}</p>
+          <p class="muted">${escapeHtml(detail.user.location || "No location")} · Trust ${detail.user.trust_score || 0}</p>
+          <h3>Recent bookings</h3>
+          ${(detail.recent_bookings || []).map((booking) => `
+            <div class="job-meta">
+              <span>#${booking.id}</span>
+              <span>${escapeHtml(booking.skill || "Unknown skill")}</span>
+              <span>${escapeHtml(booking.status || "unknown")}</span>
+            </div>
+          `).join("") || `<p class="muted">No recent bookings.</p>`}
+          <h3 style="margin-top:16px;">Audit log</h3>
+          ${renderAuditLog(detail.audit_log || [])}
+        </div>
+      `;
+      panel.style.display = "block";
+    });
+  });
+}
+
+function renderBookingResults(items = []) {
+  if (!items.length) {
+    resultsEl.innerHTML = `<div class="empty-state"><p class="muted">No bookings matched that search.</p></div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = items.map((item) => `
+    <article class="job-item" data-admin-booking="${item.id}">
+      <div class="job-header">
+        <div>
+          <h3>Booking #${item.id}</h3>
+          <p class="muted">${escapeHtml(item.seeker_name || "Unknown seeker")} → ${escapeHtml(item.provider_name || "Unknown provider")}</p>
+        </div>
+        <span class="status-pill status-pending">${escapeHtml(item.status || "unknown")}</span>
+      </div>
+      <div class="job-meta">
+        <span>INR ${Number(item.amount || 0).toFixed(0)}</span>
+        <span>${escapeHtml(item.category || "Unknown category")}</span>
+        <span>${item.scheduled_at ? new Date(item.scheduled_at).toLocaleString() : "No schedule"}</span>
+      </div>
+      <div class="job-route-actions">
+        <button class="btn ghost" type="button" data-admin-booking-open="${item.id}">Open detail</button>
+      </div>
+      <div id="admin-booking-detail-${item.id}" style="display:none;margin-top:12px;"></div>
+    </article>
+  `).join("");
+
+  document.querySelectorAll("[data-admin-booking-open]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const bookingId = button.dataset.adminBookingOpen;
+      const panel = document.getElementById(`admin-booking-detail-${bookingId}`);
+      if (panel.style.display === "block") {
+        panel.style.display = "none";
+        return;
+      }
+      const response = await authFetch(`/api/ops/admin/bookings/${bookingId}`);
+      if (!response.ok) {
+        showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+        return;
+      }
+      const detail = response.data.booking;
+      panel.innerHTML = `
+        <div class="dashboard-note">
+          <p class="muted">${escapeHtml(detail.category || "Unknown category")} · ${escapeHtml(detail.payment_status || "unknown payment")}</p>
+          <p class="muted">Seeker: ${escapeHtml(detail.seeker?.name || "Unknown")} · Provider: ${escapeHtml(detail.provider?.name || "Unknown")}</p>
+          <p class="muted">Service INR ${Number(detail.service_amount || 0).toFixed(0)} · Platform INR ${Number(detail.platform_fee_amount || 0).toFixed(0)} · GST INR ${Number(detail.gst_amount || 0).toFixed(0)}</p>
+          <h3 style="margin-top:16px;">Audit log</h3>
+          ${renderAuditLog(response.data.audit_log || [])}
+        </div>
+      `;
+      panel.style.display = "block";
+    });
+  });
+}
+
+async function runSearch() {
+  const query = (searchInput.value || "").trim();
+  if (query.length < 3) {
+    hintEl.textContent = "Type 3 or more characters to search.";
+    resultsEl.innerHTML = "";
+    return;
+  }
+
+  hintEl.textContent = "Searching…";
+  const endpoint = activeTab === "users"
+    ? `/api/ops/admin/users/search?q=${encodeURIComponent(query)}&limit=20`
+    : `/api/ops/admin/bookings/search?q=${encodeURIComponent(query)}&status=${encodeURIComponent(bookingStatusInput.value || "")}&limit=20`;
+  const response = await authFetch(endpoint);
+  if (!response.ok) {
+    hintEl.textContent = "Search failed.";
+    showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+    return;
+  }
+
+  hintEl.textContent = `Showing ${response.data.items.length} result(s).`;
+  if (activeTab === "users") {
+    renderUserResults(response.data.items || []);
+  } else {
+    renderBookingResults(response.data.items || []);
+  }
+}
+
+document.querySelectorAll("[data-admin-tab]").forEach((button) => {
+  button.addEventListener("click", () => setTab(button.dataset.adminTab));
+});
+
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 400);
+});
+bookingStatusInput.addEventListener("change", runSearch);
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const user = await getCurrentUser(true);
+  if (!user?.is_admin) {
+    showMkToast("Admin access required.", "error");
+    window.location.replace("/home");
+    return;
+  }
+  setTab("users");
+});
+</script>
+{% endblock %}

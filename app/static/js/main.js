@@ -1,129 +1,38 @@
-// // app/static/js/main.js
+// app/static/js/main.js — ES Module
 
-// const TOKEN_KEY = 'sklio_access_token';
-// const USER_KEY  = 'sklio_user'; // cached /me response
-
-// export function getToken() {
-//   return localStorage.getItem(TOKEN_KEY);
-// }
-
-// export function setToken(token) {
-//   localStorage.setItem(TOKEN_KEY, token);
-// }
-
-// export function clearToken() {
-//   localStorage.removeItem(TOKEN_KEY);
-//   localStorage.removeItem(USER_KEY);
-// }
-
-// export function logout() {
-//   clearToken();
-//   window.location.href = '/demo_login';
-// }
-
-// // Basic fetch
-// export async function apiFetch(path, opts = {}) {
-//   opts.headers = opts.headers || {};
-//   const base = '';
-//   opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
-//   const res = await fetch(base + path, opts);
-//   const data = await res.json().catch(() => ({}));
-//   return { ok: res.ok, status: res.status, data };
-// }
-
-// // Auth fetch (adds Authorization header)
-// export async function authFetch(path, opts = {}) {
-//   opts.headers = opts.headers || {};
-//   const token = getToken();
-//   if (token) {
-//     opts.headers['Authorization'] = 'Bearer ' + token;
-//   }
-//   opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
-//   const res = await fetch(path, opts);
-//   const data = await res.json().catch(() => ({}));
-
-//   // Auto-logout on 401
-//   if (res.status === 401) {
-//     clearToken();
-//     // optional: redirect to login
-//   }
-
-//   return { ok: res.ok, status: res.status, data };
-// }
-
-// // Get cached user; fetch /me if missing
-// export async function getCurrentUser(force = false) {
-//   if (!force) {
-//     const cached = localStorage.getItem(USER_KEY);
-//     if (cached) {
-//       try { return JSON.parse(cached); } catch(e){}
-//     }
-//   }
-//   const token = getToken();
-//   if (!token) return null;
-//   const res = await authFetch('/api/auth/me', { method: 'GET' });
-//   if (res.ok) {
-//     localStorage.setItem(USER_KEY, JSON.stringify(res.data));
-//     return res.data;
-//   }
-//   return null;
-// }
-
-// // Simple geolocation helper
-// export function getLocation(timeout=10000) {
-//   return new Promise((resolve) => {
-//     if (!navigator.geolocation) {
-//       resolve(null);
-//       return;
-//     }
-//     navigator.geolocation.getCurrentPosition(
-//       pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-//       err => resolve(null),
-//       { enableHighAccuracy: true, timeout, maximumAge: 0 }
-//     );
-//   });
-// }
-
-// // On every page: update header state (login/logout)
-// document.addEventListener('DOMContentLoaded', async () => {
-//   const token = getToken();
-//   const authBar = document.querySelector('[data-auth-bar]');
-//   if (!authBar) return;
-
-//   if (token) {
-//     const user = await getCurrentUser();
-//     authBar.innerHTML = `
-//       <span class="muted">Hi, ${user ? user.name : 'user'} (${user ? user.role : ''})</span>
-//       <button class="btn ghost small" id="logoutBtn">Logout</button>
-//     `;
-//     const btn = document.getElementById('logoutBtn');
-//     if (btn) btn.addEventListener('click', logout);
-//   } else {
-//     authBar.innerHTML = `
-//       <a href="/demo_login" class="btn ghost small">Login</a>
-//     `;
-//   }
-// });
-
-// app/static/js/main.js
-// ES MODULE VERSION (works with <script type="module">)
 
 // ================== STORAGE KEYS ==================
 export const TOKEN_KEY = 'sklio_access_token';
 export const USER_KEY  = 'sklio_user';
+const LEGACY_TOKEN_KEY = "skl_token";
+const LEGACY_ROLE_KEY = "skl_role";
+const FEATURE_CACHE_KEY = "sklio_features";
+const FEATURE_CACHE_MAX_AGE_MS = 60 * 1000;
+const PENDING_TOAST_KEY = "mk_pending_toast";
 
 // ================== TOKEN HELPERS ==================
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY);
 }
 
 export function setToken(token) {
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(LEGACY_TOKEN_KEY, token);
+}
+
+export function setCachedUser(user) {
+  if (!user) return;
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (user.role) {
+    localStorage.setItem(LEGACY_ROLE_KEY, user.role);
+  }
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(LEGACY_ROLE_KEY);
 }
 
 export function logout() {
@@ -131,12 +40,80 @@ export function logout() {
   window.location.replace('/demo_login');
 }
 
+/** Minimal toast (Task 2+); mk- prefixed host/class in CSS */
+export function showMkToast(message, variant = "error") {
+  let host = document.getElementById("mk-toast-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "mk-toast-host";
+    host.className = "mk-toast-host";
+    document.body.appendChild(host);
+  }
+  const el = document.createElement("div");
+  el.className = `mk-toast mk-toast--${variant}`;
+  el.setAttribute("role", "status");
+  el.textContent = message;
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("is-visible"));
+  const ms = variant === "error" ? 5000 : 3000;
+  setTimeout(() => {
+    el.classList.remove("is-visible");
+    setTimeout(() => el.remove(), 280);
+  }, ms);
+}
+
+function queuePendingToast(message, variant = "error") {
+  try {
+    sessionStorage.setItem(PENDING_TOAST_KEY, JSON.stringify({ message, variant }));
+  } catch {
+    // Ignore storage failures for non-essential UX polish.
+  }
+}
+
+function consumePendingToast() {
+  try {
+    const raw = sessionStorage.getItem(PENDING_TOAST_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(PENDING_TOAST_KEY);
+    const parsed = JSON.parse(raw);
+    if (parsed?.message) {
+      requestAnimationFrame(() => showMkToast(parsed.message, parsed.variant || "error"));
+    }
+  } catch {
+    sessionStorage.removeItem(PENDING_TOAST_KEY);
+  }
+}
+
+function readCachedFeatures() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(FEATURE_CACHE_KEY) || "null");
+    if (!cached?.data || !cached?.fetched_at) return null;
+    if ((Date.now() - cached.fetched_at) > FEATURE_CACHE_MAX_AGE_MS) return null;
+    return cached.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedFeatures(data) {
+  try {
+    localStorage.setItem(
+      FEATURE_CACHE_KEY,
+      JSON.stringify({ data, fetched_at: Date.now() })
+    );
+  } catch {
+    // Ignore localStorage errors for non-essential caching.
+  }
+}
+
 // ================== FETCH HELPERS ==================
 export async function authFetch(path, opts = {}) {
-  // ✅ ALWAYS tell backend we are sending JSON
+  const isFormData = opts.body instanceof FormData;
+
+  // ✅ Only set JSON content type when not sending FormData
   opts.headers = {
-    "Content-Type": "application/json",
-    ...(opts.headers || {})
+    ...(opts.headers || {}),
+    ...(isFormData ? {} : { "Content-Type": "application/json" })
   };
 
   const token = getToken();
@@ -151,14 +128,23 @@ export async function authFetch(path, opts = {}) {
     // Safely parse JSON (even for empty responses)
     data = await res.json().catch(() => ({}));
   } catch (err) {
-    console.error("Network error:", err);
-    return { ok: false, data: { error: "Network error" } };
+    showMkToast("Connection error. Check your internet and try again.", "error");
+    return {
+      ok: false,
+      status: 0,
+      data: { error: "Connection error. Check your internet and try again." }
+    };
   }
 
   // 🔒 Auto logout on expired / invalid token
   if (res.status === 401) {
     clearToken();
+    queuePendingToast("Session expired. Please log in again.", "error");
     window.location.replace("/demo_login");
+  }
+
+  if (res.status >= 500) {
+    showMkToast("Something went wrong. We're on it.", "error");
   }
 
   return {
@@ -166,6 +152,32 @@ export async function authFetch(path, opts = {}) {
     status: res.status,
     data
   };
+}
+
+
+
+export async function ensureFeaturesLoaded(force = false) {
+  if (!force) {
+    const cached = readCachedFeatures();
+    if (cached) return cached;
+  }
+
+  try {
+    const res = await fetch("/api/system/features", { method: "GET" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return readCachedFeatures() || {};
+    }
+    writeCachedFeatures(data || {});
+    return data || {};
+  } catch {
+    return readCachedFeatures() || {};
+  }
+}
+
+export async function useFeature(name) {
+  const features = await ensureFeaturesLoaded();
+  return Boolean(features?.[name]);
 }
 
 
@@ -187,7 +199,7 @@ export async function getCurrentUser(force = false) {
 
   const res = await authFetch('/api/auth/me');
   if (res.ok) {
-    localStorage.setItem(USER_KEY, JSON.stringify(res.data));
+    setCachedUser(res.data);
     return res.data;
   }
 
@@ -211,129 +223,284 @@ export function getLocation(timeout = 10000) {
   });
 }
 
+async function fetchUnreadChatCount() {
+  const token = getToken();
+  if (!token) return 0;
+  try {
+    const res = await authFetch("/api/chat/unread-count", { method: "GET" });
+    if (!res.ok) return 0;
+    return Number(res.data?.count || 0);
+  } catch {
+    return 0;
+  }
+}
+
+// ================== GLOBAL UI HELPERS ==================
+function initMobileToggle() {
+  const toggle = document.getElementById("mobileToggle");
+  const nav = document.getElementById("mainNav");
+  if (!toggle || !nav) return;
+
+  // Remove old listeners to avoid multiple fires
+  const newToggle = toggle.cloneNode(true);
+  toggle.parentNode.replaceChild(newToggle, toggle);
+
+  newToggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    nav.classList.toggle("show");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (nav.classList.contains("show") && !nav.contains(e.target) && !newToggle.contains(e.target)) {
+      nav.classList.remove("show");
+    }
+  });
+}
+
+function appendNavLink(nav, href, text, isActive = false) {
+  const link = document.createElement("a");
+  link.href = href;
+  link.textContent = text;
+  if (isActive) {
+    link.className = "active";
+  }
+  nav.appendChild(link);
+}
+
+function renderMainNav({ nav, user, pathname, jobPostsEnabled }) {
+  if (!nav) return;
+  nav.innerHTML = "";
+
+  appendNavLink(nav, "/home", "Home", pathname === "/home" || pathname === "/");
+
+  if (jobPostsEnabled) {
+    appendNavLink(nav, "/jobs", "Browse Jobs", pathname === "/jobs");
+  }
+
+  if (!user) {
+    return;
+  }
+
+  if (user.role === "PROVIDER") {
+    appendNavLink(
+      nav,
+      "/provider/dashboard",
+      "My Dashboard",
+      pathname.startsWith("/provider/dashboard")
+    );
+    if (jobPostsEnabled) {
+      appendNavLink(nav, "/provider/job-board", "Job Board", pathname === "/provider/job-board");
+    }
+    return;
+  }
+
+  if (user.role === "SEEKER") {
+    appendNavLink(nav, "/my-bookings", "My Bookings", pathname === "/my-bookings");
+    if (jobPostsEnabled) {
+      appendNavLink(nav, "/my-jobs", "My Job Posts", pathname === "/my-jobs");
+    }
+  }
+}
+
 // ================== PROVIDER VERIFICATION GUARD ==================
 document.addEventListener("DOMContentLoaded", async () => {
+  consumePendingToast();
+  ensureFeaturesLoaded();
+  initMobileToggle();
   const path = window.location.pathname;
+  const headerActions = document.getElementById("headerActions");
+  const mainNav = document.getElementById("mainNav");
+  const jobPostsEnabled = document.body.dataset.featureJobPosts === 'true';
 
-  // 🚫 PUBLIC / AUTH PAGES
-  if (
-    path === "/" ||
-    path === "/login" ||
-    path === "/demo_login" ||
-    path === "/demo-login"
-  ) {
-    return;
-  }
+  renderMainNav({ nav: mainNav, user: null, pathname: path, jobPostsEnabled });
+
+  const publicPaths = new Set([
+    "/",
+    "/login",
+    "/demo_login",
+    "/demo-login",
+    "/home",
+    "/trust-center",
+    "/help",
+    "/legal/terms",
+    "/legal/privacy",
+    "/legal/refund",
+    "/legal/provider-terms",
+    "/legal/grievance",
+  ]);
+
+  const isPublicPath =
+    publicPaths.has(path) ||
+    path.startsWith("/skill/") ||
+    path.startsWith("/booking/");
 
   const token = getToken();
-  if (!token) {
+  if (!token && !isPublicPath) {
     window.location.replace("/demo_login");
     return;
   }
 
-  const user = await getCurrentUser(true);
-  if (!user) {
+  const user = token ? await getCurrentUser(true) : null;
+  if (!user && !isPublicPath) {
     window.location.replace("/demo_login");
     return;
   }
 
-  /* ==================================================
-     🔒 PROVIDER PROFILE GLOBAL GUARD
-  ================================================== */
   if (
+    !isPublicPath &&
+    user &&
     user.role === "PROVIDER" &&
-    user.is_provider_profile_complete === false &&
-    path !== "/provider/profile"
+    user.provider_next_route &&
+    Array.isArray(user.provider_allowed_paths) &&
+    user.provider_allowed_paths.length > 0 &&
+    !user.provider_allowed_paths.includes(path)
   ) {
-    window.location.replace("/provider/profile");
+    window.location.replace(user.provider_next_route);
+    return;
+  }
+  if (!headerActions || !mainNav) return;
+
+  if (!user) {
+    headerActions.innerHTML = `
+      <a href="/demo_login" class="btn secondary small">Demo Login</a>
+      <div class="mobile-toggle" id="mobileToggle">
+        <i data-lucide="menu"></i>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+    initMobileToggle();
     return;
   }
 
-  const role = user.role; // "PROVIDER" | "SEEKER"
-  const status = user.verification_status;
-  const needsSelfie = user.requires_selfie === true;
-  const isVerified = user.is_verified === true;
+  renderMainNav({ nav: mainNav, user, pathname: path, jobPostsEnabled });
 
-  // ✅ Fully verified → allow everything
-  if (isVerified || status === "completed") {
-    return;
-  }
+  // --- 2. Update Header Actions (Notifications + User Dropdown) ---
+  const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  
+  headerActions.innerHTML = `
+    <!-- Notifications -->
+    <a href="/notifications" class="nav-notif-btn" id="navNotifBtn" title="Notifications">
+      <i data-lucide="bell" style="width:20px; height:20px;"></i>
+      <span class="nav-badge" id="navNotifBadge" style="display:none;"></span>
+    </a>
 
-  // Seeker should not be locked
-  if (role !== "PROVIDER") return;
+    <!-- User Menu -->
+    <div class="user-menu" id="userMenu">
+      <div class="user-trigger" id="userTrigger">
+        <div class="user-avatar">${initials}</div>
+        <div class="user-info">
+          <span class="user-name">${user.name}</span>
+          <span class="user-role-badge">${user.role}</span>
+        </div>
+        <i data-lucide="chevron-down" style="width:14px; height:14px; opacity:0.5;"></i>
+      </div>
 
-  // ==================================================
-  // 🔒 HARD LOCK 1: SELFIE PAGE
-  // ==================================================
-  if (path === "/provider_verification_selfie") {
-    return;
-  }
+      <div class="dropdown-menu" id="userDropdown">
+        <div style="padding: 10px 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px;">
+          <div style="font-size: 14px; font-weight: 600;">${user.name}</div>
+          <div style="font-size: 11px; color: var(--muted);">${user.email || ''}</div>
+        </div>
+        
+        <a href="/wallet" class="dropdown-item">
+          <i data-lucide="wallet"></i> Wallet
+        </a>
+        <a href="/messages" class="dropdown-item">
+          <i data-lucide="message-square"></i> Messages
+          <span id="dropdownChatBadge" style="display:none; margin-left:auto; background:var(--brand-600); color:white; padding:1px 6px; border-radius:10px; font-size:10px;"></span>
+        </a>
+        <a href="/account" class="dropdown-item">
+          <i data-lucide="settings"></i> Settings
+        </a>
+        
+        <div class="dropdown-divider"></div>
+        
+        <button class="dropdown-item logout" id="logoutBtn" style="width:100%; border:none; background:none; cursor:pointer; font-family:inherit;">
+          <i data-lucide="log-out"></i> Logout
+        </button>
+      </div>
+    </div>
 
-  // ==================================================
-  // 🔒 HARD LOCK 2: VIDEO PAGE DURING SELFIE REQUIREMENT
-  // ==================================================
-  if (
-    status === "document_verified" &&
-    needsSelfie === true &&
-    path === "/provider_verification_video"
-  ) {
-    window.location.replace("/provider_verification_selfie");
-    return;
-  }
-
-  // ❌ Rejected → restart
-  if (status === "rejected" && path !== "/provider_verification") {
-    window.location.replace("/provider_verification");
-    return;
-  }
-
-  // 🟡 Step 1: Document
-  if (status === "pending" && path !== "/provider_verification") {
-    window.location.replace("/provider_verification");
-    return;
-  }
-
-  // 🟡 Step 2: Selfie
-  if (
-    status === "document_verified" &&
-    needsSelfie === true &&
-    path !== "/provider_verification_selfie"
-  ) {
-    window.location.replace("/provider_verification_selfie");
-    return;
-  }
-
-  // 🟡 Step 3: Video
-  if (
-    status === "document_verified" &&
-    needsSelfie === false &&
-    path !== "/provider_verification_video"
-  ) {
-    window.location.replace("/provider_verification_video");
-    return;
-  }
-
-  // 🟢 Step 4: Location
-  if (
-    status === "face_verified" &&
-    path !== "/confirm_location"
-  ) {
-    window.location.replace("/confirm_location");
-    return;
-  }
-
-  // ================== AUTH BAR ==================
-  const authBar = document.querySelector("[data-auth-bar]");
-  if (!authBar) return;
-
-  authBar.innerHTML = `
-    <span class="muted">
-      Hi, ${user.name} (${user.role})
-    </span>
-    <button class="btn ghost small" id="logoutBtn">Logout</button>
+    <div class="mobile-toggle" id="mobileToggle">
+      <i data-lucide="menu"></i>
+    </div>
   `;
 
-  document
-    .getElementById("logoutBtn")
-    ?.addEventListener("click", logout);
+  initMobileToggle();
+  if (window.lucide) window.lucide.createIcons();
+
+  // --- 3. Interaction Logic ---
+  const userTrigger = document.getElementById("userTrigger");
+  const userDropdown = document.getElementById("userDropdown");
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  if (userTrigger && userDropdown) {
+    userTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      userDropdown.classList.toggle("show");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!userDropdown.contains(e.target)) {
+        userDropdown.classList.remove("show");
+      }
+    });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", logout);
+  }
+
+  // Notification badge polling
+  async function refreshNavBadges() {
+    try {
+      const [notifRes, chatCount] = await Promise.all([
+        fetch('/api/notifications/unread-count', { headers: { Authorization: 'Bearer ' + token } }),
+        fetchUnreadChatCount()
+      ]);
+
+      if (notifRes.ok) {
+        const d = await notifRes.json();
+        const badge = document.getElementById('navNotifBadge');
+        const cnt = Number(d.count || 0);
+        if (badge) {
+          badge.style.display = cnt > 0 ? 'flex' : 'none';
+          badge.textContent = cnt > 9 ? '9+' : String(cnt);
+        }
+      }
+
+      const chatBadge = document.getElementById("dropdownChatBadge");
+      if (chatBadge) {
+        chatBadge.style.display = chatCount > 0 ? 'inline-block' : 'none';
+        chatBadge.textContent = chatCount > 99 ? '99+' : String(chatCount);
+      }
+    } catch(e) {}
+  }
+
+  refreshNavBadges();
+  setInterval(refreshNavBadges, 30000);
+
+  if (window.lucide) window.lucide.createIcons();
+
+  // Real-time Notification Listener
+  if (user && typeof io !== "undefined") {
+    try {
+      const socket = io({
+        auth: { token },
+        transports: ["websocket", "polling"],
+      });
+
+      socket.on("connect", () => {
+        socket.emit("join", { room: `user_${user.id}` });
+      });
+
+      socket.on("notification", (data) => {
+        // Show live toast for new notification
+        showMkToast(data.title || "New notification", "success");
+        // Immediately refresh badges
+        refreshNavBadges();
+      });
+    } catch (err) {
+      console.warn("Real-time notifications unavailable:", err);
+    }
+  }
 });

@@ -1,0 +1,67 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+.env
+.env.*
+!.env.example
+.agent/
+.code-review-graph/
+.mcp.json
+.codex/*
+!.codex/mcp.example.json
+mcp_config.json
+mcp_config.*.json
+*.pem
+*.key
+secrets/
+.secrets
+
+myenv/
+.venv/
+venv/
+
+uploads/documents/*
+!uploads/documents/.gitkeep
+
+instance/
+*.sqlite3
+
+.DS_Store
+Thumbs.db
+
+# Pytest temp artifacts
+pytest-cache-files-*
+.pytest_tmp/
+.pytest_tmp*/
+.smoke_tmp/
+pytest_temp/
+py_tmp_run/
+pytestdebug.log
+
+# Debug/temp output files
+debug.txt
+out.txt
+out2.txt
+pytest_capture.txt
+pytest_error.txt
+pytest_out.txt
+pytest_smoke_debug.txt
+auth_pytest_capture.txt
+
+# Schema snapshots
+schema_*.sql
+
+# Temp upload directories
+tmp_uploads/
+test_uploads/
+
+# Scratch scripts
+scratch/
+
+# DB and Logs
+*.log
+*.db
+tmp/
+.vscode/

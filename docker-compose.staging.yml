@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:15
+    container_name: sklio-db-staging
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7
+    container_name: sklio-redis-staging
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata_staging:/data
+
+  web:
+    build: .
+    container_name: sklio-web-staging
+    env_file:
+      - .env.staging
+    depends_on:
+      - db
+      - redis
+    environment:
+      - ENV=staging
+      - FLASK_ENV=staging
+      - PAYMENT_PROVIDER=stripe
+      - PAYMENT_MODE=real
+      - ALLOW_MOCK_PAYMENTS=false
+      - ALLOW_UNSAFE_WERKZEUG=false
+      - SOCKETIO_ASYNC_MODE=threading
+      - GUNICORN_WORKER_CLASS=gthread
+      - GUNICORN_THREADS=100
+      - PYTHONPATH=/app
+    ports:
+      - "5001:5000"
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+    working_dir: /app
+    command: ["./run_prod.sh"]
+
+volumes:
+  pgdata_staging:
+  redisdata_staging:

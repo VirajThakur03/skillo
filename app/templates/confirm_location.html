@@ -1,73 +1,84 @@
 {% extends "base.html" %}
+{% block title %}Confirm Location | Sklio{% endblock %}
 {% block content %}
-<div class="card glass">
-  <h2>Confirm Your Location</h2>
-  <p class="muted">
-    We need your current location to complete verification.
-    This will be saved to your profile.
-  </p>
+<section class="section">
+  <div class="card mk-card">
+    <div class="badge-row">
+      <span class="chip">Verification final step</span>
+      <span class="chip success">Required location</span>
+    </div>
+    <h2 class="mk-display-md">Confirm your current location</h2>
+    <p class="mk-body-sm">
+      Your current location is required to finish provider verification and unlock your dashboard.
+      We use it to verify your service area and complete onboarding.
+    </p>
 
-  <div style="margin-top:16px;">
-    <button class="btn neon" id="locBtn">Share My Location</button>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn primary" id="locBtn" type="button">Share my location</button>
+    </div>
+
+    <p id="status" class="mk-body-sm" style="margin-top:12px;"></p>
   </div>
-
-  <p id="status" class="muted" style="margin-top:12px;"></p>
-</div>
+</section>
 {% endblock %}
 
 {% block scripts %}
-<script>
-const statusEl = document.getElementById('status');
-const btn = document.getElementById('locBtn');
+<script type="module">
+import { authFetch, showMkToast } from "/static/js/main.js";
 
-btn.addEventListener('click', () => {
+const statusEl = document.getElementById("status");
+const btn = document.getElementById("locBtn");
+
+function setStatus(message) {
+  statusEl.innerText = message;
+}
+
+btn.addEventListener("click", () => {
   if (!navigator.geolocation) {
-    alert('Geolocation not supported');
+    showMkToast("Location sharing is not supported on this device.", "error");
+    setStatus("Location sharing is not supported on this device.");
     return;
   }
 
   btn.disabled = true;
-  btn.innerText = 'Fetching location…';
+  btn.innerText = "Fetching location...";
+  setStatus("Waiting for location permission...");
 
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const payload = {
-      latitude: pos.coords.latitude,
-      longitude: pos.coords.longitude
-    };
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const response = await authFetch("/api/auth/confirm_location", {
+      method: "POST",
+      body: JSON.stringify({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      }),
+    });
 
-    const token = localStorage.getItem('sklio_access_token');
-    if (!token) {
-      alert('Please login again');
+    if (!response.ok) {
+      btn.disabled = false;
+      btn.innerText = "Share my location";
+      const message = response.data?.error || "Location verification failed.";
+      setStatus(message);
+      showMkToast(message, "error");
       return;
     }
 
-    const res = await fetch('/api/auth/confirm_location', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-    statusEl.innerText = JSON.stringify(data, null, 2);
-
-    if (res.ok) {
-      alert('Verification completed successfully 🎉');
-      window.location.href = '/provider/dashboard';
-    } else {
-      btn.disabled = false;
-      btn.innerText = 'Share My Location';
-      alert(data.error || 'Location verification failed');
-    }
-  }, err => {
+    setStatus("Verification completed. Redirecting to your dashboard...");
+    showMkToast("Verification completed", "success");
+    window.setTimeout(() => {
+      window.location.replace("/provider/dashboard");
+    }, 700);
+  }, (error) => {
     btn.disabled = false;
-    btn.innerText = 'Share My Location';
-    alert('Location error: ' + err.message);
+    btn.innerText = "Share my location";
+    const message = error?.code === 1
+      ? "Location permission is required to finish provider verification."
+      : "We couldn't fetch your location. Please try again.";
+    setStatus(message);
+    showMkToast(message, "error");
   }, {
     enableHighAccuracy: true,
-    timeout: 10000
+    timeout: 10000,
+    maximumAge: 0,
   });
 });
 </script>

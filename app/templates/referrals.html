@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Referrals | Sklio{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="card mk-card" style="margin-bottom:16px;">
+    <div class="badge-row">
+      <span class="chip">Referral rewards</span>
+      <span class="chip success">Wallet linked</span>
+    </div>
+    <h2 class="mk-display-md">Share your code and track every reward</h2>
+    <p class="mk-body-sm">Invite friends, watch pending rewards move to earned, and keep your wallet credits in one place.</p>
+  </div>
+
+  <div class="card mk-card" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+      <div>
+        <div class="mk-label-upper">Your referral code</div>
+        <div id="referralCodeBox" style="display:inline-flex;align-items:center;gap:10px;padding:14px 18px;border-radius:16px;background:var(--brand-50);color:var(--brand-700);font:600 24px/1 monospace;margin-top:10px;">--</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn primary" id="copyCodeBtn" type="button">Copy code</button>
+        <button class="btn ghost" id="shareCodeBtn" type="button">Share</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+    <div class="card mk-card">
+      <div class="mk-label-upper">Referred</div>
+      <div id="statReferred" class="mk-display-md">0</div>
+    </div>
+    <div class="card mk-card">
+      <div class="mk-label-upper">Earned</div>
+      <div id="statEarned" class="mk-display-md">INR 0</div>
+    </div>
+    <div class="card mk-card">
+      <div class="mk-label-upper">Pending</div>
+      <div id="statPending" class="mk-display-md">INR 0</div>
+    </div>
+  </div>
+
+  <div class="card mk-card" style="margin-bottom:16px;">
+    <div class="mk-subheading">Referral progress</div>
+    <div id="rewardList" style="margin-top:12px;"></div>
+  </div>
+
+  <div class="card mk-card">
+    <button class="btn ghost" id="howItWorksBtn" type="button">How it works</button>
+    <div id="howItWorksPanel" style="display:none;margin-top:12px;">
+      <div class="mk-body-sm">1. Share your code.</div>
+      <div class="mk-body-sm">2. Your friend signs up and applies it before their first booking.</div>
+      <div class="mk-body-sm">3. You earn INR 100 after their first completed booking.</div>
+      <p class="mk-body-sm" style="margin-top:8px;">Reward credited after friend's first completed booking. Max 10 referrals per month.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+const referralCodeBox = document.getElementById("referralCodeBox");
+const statReferred = document.getElementById("statReferred");
+const statEarned = document.getElementById("statEarned");
+const statPending = document.getElementById("statPending");
+const rewardList = document.getElementById("rewardList");
+const copyCodeBtn = document.getElementById("copyCodeBtn");
+const shareCodeBtn = document.getElementById("shareCodeBtn");
+const howItWorksBtn = document.getElementById("howItWorksBtn");
+const howItWorksPanel = document.getElementById("howItWorksPanel");
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function rewardStatusLabel(status) {
+  if (status === "PENDING") return "Pending first booking";
+  if (status === "PAID") return "INR 100 credited";
+  if (status === "EARNED") return "Reward earned";
+  return status || "Pending";
+}
+
+async function loadReferrals() {
+  const response = await authFetch("/api/referrals");
+  if (!response.ok) {
+    rewardList.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">${escapeHtml(response.data?.error || "Unable to load referrals.")}</p></div>`;
+    return;
+  }
+
+  const data = response.data || {};
+  referralCodeBox.textContent = data.code || "--";
+  statReferred.textContent = String(data.total_referred || 0);
+  statEarned.textContent = `INR ${Number(data.wallet_credit_earned || 0).toFixed(0)}`;
+  statPending.textContent = `INR ${Number(data.pending || 0).toFixed(0)}`;
+
+  const items = data.items || [];
+  if (!items.length) {
+    rewardList.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">Share your code to start earning. Your first successful referral will show up here.</p></div>`;
+    return;
+  }
+
+  rewardList.innerHTML = items.map((item) => `
+    <article class="mk-card" style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <div class="mk-subheading">${escapeHtml(item.friend_label || "Friend")}</div>
+          <div class="mk-body-sm">${item.joined_date ? new Date(item.joined_date).toLocaleDateString() : "Joined recently"}</div>
+        </div>
+        <span class="mk-chip" style="background:${item.reward_status === "PAID" ? "var(--success-50)" : "var(--gray-100)"};color:${item.reward_status === "PAID" ? "var(--success-700)" : "var(--gray-700)"};">
+          ${escapeHtml(rewardStatusLabel(item.reward_status))}
+        </span>
+      </div>
+      <div class="mk-body-sm" style="margin-top:8px;">
+        Booking: ${escapeHtml(item.booking_status || "Pending first booking")} · Reward: INR ${Number(item.reward_amount || 0).toFixed(0)}
+      </div>
+      ${item.note ? `<div class="mk-body-sm" style="margin-top:6px;color:var(--gray-500);">${escapeHtml(item.note)}</div>` : ""}
+    </article>
+  `).join("");
+}
+
+copyCodeBtn.addEventListener("click", async () => {
+  const code = referralCodeBox.textContent.trim();
+  if (!code || code === "--") return;
+  try {
+    await navigator.clipboard.writeText(code);
+    copyCodeBtn.textContent = "Copied!";
+    setTimeout(() => { copyCodeBtn.textContent = "Copy code"; }, 2000);
+  } catch {
+    copyCodeBtn.textContent = "Copy failed";
+    setTimeout(() => { copyCodeBtn.textContent = "Copy code"; }, 2000);
+  }
+});
+
+shareCodeBtn.addEventListener("click", async () => {
+  const code = referralCodeBox.textContent.trim();
+  if (!code || code === "--") return;
+  const message = `Book home services on Sklio! Use my code ${code} to get INR 100 off your first booking.`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ text: message });
+      return;
+    } catch {}
+  }
+  try {
+    await navigator.clipboard.writeText(message);
+    shareCodeBtn.textContent = "Copied share text";
+    setTimeout(() => { shareCodeBtn.textContent = "Share"; }, 2000);
+  } catch {
+    shareCodeBtn.textContent = "Share unavailable";
+    setTimeout(() => { shareCodeBtn.textContent = "Share"; }, 2000);
+  }
+});
+
+howItWorksBtn.addEventListener("click", () => {
+  howItWorksPanel.style.display = howItWorksPanel.style.display === "none" ? "block" : "none";
+});
+
+loadReferrals();
+</script>
+{% endblock %}

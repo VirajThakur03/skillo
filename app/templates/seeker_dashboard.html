@@ -1,10 +1,50 @@
 {% extends "base.html" %}
 
+{% block title %}My Bookings | Sklio{% endblock %}
 {% block content %}
-<div class="card glass">
-  <h2>My Bookings</h2>
-  <div id="list"></div>
-</div>
+<section class="section">
+  <div class="card mk-card">
+    <div class="badge-row">
+      <span class="chip">Seeker dashboard</span>
+      <span class="chip success">Bookings</span>
+    </div>
+    <h2 class="mk-display-md">My bookings <span id="seekerChatBadge"></span></h2>
+    <p class="mk-body-sm">Track your active and past services in one place.</p>
+    <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <input id="bookingSearch" type="search" placeholder="Search provider or service" style="min-width:220px;flex:1 1 220px;">
+      <div id="bookingFilters" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn ghost" type="button" data-booking-filter="all">All</button>
+        <button class="btn ghost" type="button" data-booking-filter="active">Active</button>
+        <button class="btn ghost" type="button" data-booking-filter="completed">Completed</button>
+        <button class="btn ghost" type="button" data-booking-filter="cancelled">Cancelled</button>
+        <button class="btn ghost" type="button" data-booking-filter="needs_review">Needs review</button>
+      </div>
+    </div>
+    <div id="list" style="margin-top:16px;">
+      <div id="loadingSkeleton" class="mk-card mk-empty-state" style="padding: 20px; text-align: center;">
+        <p class="mk-body-sm" style="color: var(--gray-500);">Loading bookings...</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mk-card" style="margin-top: 24px;">
+    <h2 class="mk-heading">Profile Settings</h2>
+    <p class="mk-body-sm muted">Update your contact information.</p>
+    
+    <form id="profileForm" style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px; max-width: 400px;">
+      <div class="form-group">
+        <label class="mk-body-sm" for="profileName">Name</label>
+        <input type="text" id="profileName" class="form-control" placeholder="Your full name" required>
+      </div>
+      <div class="form-group">
+        <label class="mk-body-sm" for="profilePhone">Phone Number</label>
+        <input type="tel" id="profilePhone" class="form-control" placeholder="e.g. 9876543210" pattern="^\d{10}$" title="Please enter a valid 10-digit phone number" required>
+      </div>
+      <div id="profileMessage" class="mk-body-sm"></div>
+      <button type="submit" class="btn primary" id="saveProfileBtn">Save Profile</button>
+    </form>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -13,21 +53,243 @@ import { authFetch } from "/static/js/main.js";
 
 const list = document.getElementById("list");
 
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function invoiceDownloadHref(url) {
+  if (!url) return "#";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `/uploads/${url}`;
+}
+
+function renderInvoiceRow(invoice, bookingId) {
+  if (!invoice || invoice.status === "generating") {
+    return `
+      <div class="mk-card" style="padding:10px;margin-top:10px;background:var(--gray-50);">
+        <div class="mk-body-sm">Receipt being prepared...</div>
+      </div>
+    `;
+  }
+
+  if (!invoice.url) {
+    return `
+      <div class="mk-card" style="padding:10px;margin-top:10px;background:var(--gray-50);">
+        <button class="btn ghost" type="button" data-request-invoice="${bookingId}">Request receipt</button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="mk-card" style="padding:10px;margin-top:10px;background:var(--gray-50);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="mk-body-sm">
+          <i data-lucide="receipt" style="width:14px;height:14px;"></i>
+          Invoice #${escapeHtml(invoice.number || "Pending")}
+        </div>
+        <a class="btn ghost" href="${escapeHtml(invoiceDownloadHref(invoice.url))}" target="_blank" rel="noopener">Download PDF</a>
+      </div>
+      <details style="margin-top:8px;">
+        <summary class="mk-body-sm" style="cursor:pointer;">See breakdown</summary>
+        <div class="mk-body-sm" style="margin-top:8px;">
+          Service: INR ${Number(invoice.service || 0).toFixed(0)}<br/>
+          Platform fee: INR ${Number(invoice.platform_fee || 0).toFixed(0)}<br/>
+          GST (18%): INR ${Number(invoice.gst || 0).toFixed(0)}<br/>
+          <strong>Total paid: INR ${Number(invoice.total || 0).toFixed(0)}</strong>
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+let allBookings = [];
+let activeBookingFilter = "all";
+
+function bookingMatchesFilter(booking, filterValue) {
+  const status = String(booking.status || "").toLowerCase();
+  if (filterValue === "active") return ["pending", "confirmed", "in_progress"].includes(status);
+  if (filterValue === "completed") return status === "completed";
+  if (filterValue === "cancelled") return status === "cancelled";
+  if (filterValue === "needs_review") return booking.needs_review === true;
+  return true;
+}
+
+function bookingMatchesSearch(booking, searchText) {
+  if (!searchText) return true;
+  const haystack = `${booking.skill || ""} ${booking.provider || ""} ${booking.status || ""}`.toLowerCase();
+  return haystack.includes(searchText.toLowerCase());
+}
+
+function renderEmptyState(title, body, ctaHref = null, ctaLabel = null) {
+  list.innerHTML = `
+    <div class="mk-card" style="max-width:360px;margin:40px auto;text-align:center;">
+      <h3 class="mk-heading">${escapeHtml(title)}</h3>
+      <p class="mk-body-sm">${escapeHtml(body)}</p>
+      ${ctaHref && ctaLabel ? `<a class="btn primary" href="${escapeHtml(ctaHref)}" style="margin-top:12px;">${escapeHtml(ctaLabel)}</a>` : ""}
+    </div>
+  `;
+}
+
+function renderBookings() {
+  const searchValue = document.getElementById("bookingSearch")?.value?.trim() || "";
+  const visible = allBookings.filter((booking) => (
+    bookingMatchesFilter(booking, activeBookingFilter) &&
+    bookingMatchesSearch(booking, searchValue)
+  ));
+
+  document.querySelectorAll("[data-booking-filter]").forEach((button) => {
+    button.className = button.dataset.bookingFilter === activeBookingFilter ? "btn primary" : "btn ghost";
+  });
+
+  if (allBookings.length === 0) {
+    renderEmptyState("No bookings yet", "Book a trusted provider in minutes.", "/home", "Browse skills");
+    return;
+  }
+
+  if (visible.length === 0) {
+    renderEmptyState("No bookings match this view", "Try a different filter or search term.");
+    return;
+  }
+
+  list.innerHTML = visible.map((b) => {
+    const st = String(b.status || "").toLowerCase();
+    const hasReview = b.review_rating != null && b.review_rating !== "";
+    const feedbackLine = hasReview
+      ? `<p class="mk-body-sm" style="margin-top:8px;">Your feedback: Rating ${Number(b.review_rating).toFixed(1)}${b.review_comment ? ` - ${escapeHtml(b.review_comment)}` : ""}</p>${b.review_provider_reply ? `<div class="mk-card" style="margin-top:8px;padding:10px;border-left:3px solid var(--brand-200);background:var(--brand-50);"><div class="mk-label-upper">Provider response</div><div class="mk-body-sm">${escapeHtml(b.review_provider_reply)}</div></div>` : ""}`
+      : (st === "completed"
+        ? `<p class="mk-body-sm muted" style="margin-top:8px;">Rate this job on the track page.</p>`
+        : "");
+    const invoiceRow = st === "completed" ? renderInvoiceRow(b.invoice, b.id) : "";
+    const cancelReasonRow = st === "cancelled" && b.cancellation_reason
+      ? `<p class="mk-body-sm muted" style="margin-top:6px;">Reason: ${escapeHtml(b.cancellation_reason)}</p>`
+      : "";
+    const timelineRow = b.timeline_preview ? `<p class="mk-body-sm muted" style="margin-top:6px;">Latest: ${escapeHtml(b.timeline_preview.summary || "")}</p>` : "";
+    return `
+      <div class="mk-card mk-card-booking mk-booking-accent" data-state="${st}" style="margin-bottom:12px;">
+        <strong>${escapeHtml(b.skill)}</strong><br/>
+        Provider: ${escapeHtml(b.provider)}<br/>
+        Status: <span class="mk-chip" data-state="${st}">${escapeHtml(b.status)}</span><br/>
+        ${timelineRow}
+        ${cancelReasonRow}
+        ${feedbackLine}
+        ${invoiceRow}
+        <div class="actions" style="margin-top:8px;">
+          ${st === "completed" ? `<a class="btn ghost" href="/booking/${b.skill_id}?provider=${b.provider_id}">Book again</a>` : ""}
+          <a class="btn ghost" href="/chat/booking_${b.id}">Chat</a>
+          ${st === "completed" && b.invoice?.url ? `<a class="btn ghost" href="${escapeHtml(invoiceDownloadHref(b.invoice.url))}" target="_blank" rel="noopener">View Invoice</a>` : ""}
+          <a class="btn secondary" href="/track/${b.id}">Track</a>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
 const res = await authFetch("/api/bookings/my");
 if (!res.ok) {
-  list.innerHTML = "<p>Error loading bookings</p>";
-} else if (res.data.length === 0) {
-  list.innerHTML = "<p class='muted'>No bookings yet</p>";
+  renderEmptyState("Unable to load bookings", "Please refresh and try again.");
 } else {
-  list.innerHTML = res.data.map(b => `
-    <div class="card">
-      <strong>${b.skill}</strong><br/>
-      Provider: ${b.provider}<br/>
-      Status: <b>${b.status}</b><br/>
-      <a href="/chat/booking_${b.id}">Chat</a> •
-      <a href="/track/${b.id}">Track</a>
-    </div>
-  `).join("");
+  allBookings = Array.isArray(res.data) ? res.data : [];
+  renderBookings();
 }
+
+document.querySelectorAll("[data-booking-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    activeBookingFilter = button.dataset.bookingFilter || "all";
+    renderBookings();
+  });
+});
+
+document.getElementById("bookingSearch")?.addEventListener("input", () => {
+  renderBookings();
+});
+
+document.getElementById('list').addEventListener('click', async (e) => {
+  const button = e.target.closest('[data-request-invoice]');
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = "Requesting...";
+  const response = await authFetch(`/api/bookings/${button.dataset.requestInvoice}/invoice/retry`, {
+    method: "POST",
+  });
+  if (response.ok) {
+    window.location.reload();
+    return;
+  }
+  button.disabled = false;
+  button.textContent = "Request receipt";
+});
+
+async function refreshChatBadge() {
+  const badgeHost = document.getElementById("seekerChatBadge");
+  if (!badgeHost) return;
+  const unread = await authFetch("/api/chat/unread-count", { method: "GET" });
+  badgeHost.innerHTML = "";
+  if (!unread.ok) return;
+  const count = Number(unread.data?.count || 0);
+  if (count <= 0) return;
+  const span = document.createElement("span");
+  span.className = "mk-unread-badge";
+  span.innerText = count > 99 ? "99+" : String(count);
+  badgeHost.appendChild(span);
+}
+
+refreshChatBadge();
+setInterval(refreshChatBadge, 15000);
+
+// --- Profile Settings Logic ---
+const profileForm = document.getElementById("profileForm");
+const profileName = document.getElementById("profileName");
+const profilePhone = document.getElementById("profilePhone");
+const profileMessage = document.getElementById("profileMessage");
+const saveProfileBtn = document.getElementById("saveProfileBtn");
+
+async function loadProfile() {
+  const res = await authFetch("/api/account/export");
+  if (res.ok && res.data?.user) {
+    profileName.value = res.data.user.name || "";
+    profilePhone.value = res.data.user.phone || "";
+  }
+}
+
+loadProfile();
+
+profileForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  profileMessage.textContent = "";
+  profileMessage.className = "mk-body-sm";
+  saveProfileBtn.disabled = true;
+  saveProfileBtn.textContent = "Saving...";
+
+  const payload = {
+    name: profileName.value.trim(),
+    phone: profilePhone.value.trim()
+  };
+
+  const res = await authFetch("/api/account/profile", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+
+  saveProfileBtn.disabled = false;
+  saveProfileBtn.textContent = "Save Profile";
+
+  if (res.ok) {
+    profileMessage.textContent = "Profile updated successfully!";
+    profileMessage.style.color = "var(--success-600)";
+    // Update global context if name changed
+    document.dispatchEvent(new CustomEvent('auth:updated'));
+  } else {
+    profileMessage.textContent = res.data?.error || "Failed to update profile";
+    profileMessage.style.color = "var(--danger-600)";
+  }
+});
+
 </script>
 {% endblock %}

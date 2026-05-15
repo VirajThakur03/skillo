@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Payment History | Sklio{% endblock %}
+
+{% block content %}
+<section class="dashboard-shell mk-fade-in">
+    <div class="section-head">
+        <div>
+            <p class="eyebrow">TRANSACTIONS</p>
+            <h1>Payment History & Invoices</h1>
+            <p class="muted">View your booking payments and download invoices.</p>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 24px; padding: 0;">
+        <div id="historyTableContainer">
+            <div class="mk-empty-state" style="padding: 40px;">
+                <p class="muted">Loading history...</p>
+            </div>
+        </div>
+
+        <div id="pagination" class="mk-pagination" style="padding: 16px; border-top: 1px solid #f1f5f9; display: none; justify-content: center; gap: 12px; align-items: center;">
+            <button class="btn ghost" id="btnPrev">Previous</button>
+            <span id="pageInfo" class="muted">Page 1 of 1</span>
+            <button class="btn ghost" id="btnNext">Next</button>
+        </div>
+    </div>
+</section>
+
+<style>
+.dashboard-shell { max-width: 1000px; margin: 0 auto; padding: 20px; }
+.card { border-radius: 12px; border: 1px solid #e2e8f0; background: white; overflow: hidden; }
+.history-table { width: 100%; border-collapse: collapse; }
+.history-table th { background: #f8fafc; padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+.history-table td { padding: 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; vertical-align: middle; }
+.history-table tr:hover { background: #f8fafc; }
+.status-pill { padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.status-captured { background: #dcfce7; color: #166534; }
+.status-refunded { background: #fee2e2; color: #991b1b; }
+.status-cash { background: #fef9c3; color: #854d0e; }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, showMkToast } from "/static/js/main.js";
+
+const tableContainer = document.getElementById("historyTableContainer");
+let currentPage = 1;
+
+function invoiceDownloadUrl(invoiceUrl) {
+    if (!invoiceUrl) return "";
+    if (invoiceUrl.startsWith("/api/system/upload?") || invoiceUrl.startsWith("http://") || invoiceUrl.startsWith("https://")) {
+        return invoiceUrl;
+    }
+    return `/api/system/upload?ref=${encodeURIComponent(invoiceUrl)}&download=1`;
+}
+
+async function loadHistory(page = 1) {
+    const response = await authFetch(`/api/bookings/payment-history?page=${page}`);
+
+    if (!response.ok) {
+        tableContainer.innerHTML = `<div style="padding:40px;"><p class="muted">Error loading history.</p></div>`;
+        return;
+    }
+
+    const { items, total_pages, current_page } = response.data;
+
+    if (!items || items.length === 0) {
+        tableContainer.innerHTML = `
+            <div class="mk-empty-state" style="padding:60px;">
+                <div style="margin-bottom:12px; color:#cbd5e1;"><i data-lucide="receipt" style="width:48px;height:48px;"></i></div>
+                <p class="muted">No payment history found yet.</p>
+            </div>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+        document.getElementById("pagination").style.display = "none";
+        return;
+    }
+
+    let html = `
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Service</th>
+                    <th>Method</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Invoice</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    html += items.map(item => `
+        <tr>
+            <td>${new Date(item.created_at).toLocaleDateString()}</td>
+            <td>
+                <div style="font-weight:600;">${item.service || item.skill_title || `Booking #${item.booking_id}`}</div>
+                <div class="muted" style="font-size:11px;">${item.booking_id ? `#${item.booking_id}` : (item.kind === "wallet" ? "Wallet ledger" : "")}</div>
+            </td>
+            <td>
+                <span style="text-transform: capitalize;">${item.payment_method || "online"}</span>
+            </td>
+            <td>
+                <div style="font-weight:600;">INR ${Number(item.amount).toFixed(2)}</div>
+            </td>
+            <td>
+                <span class="status-pill status-${String(item.payment_status || item.status).toLowerCase().replace(/_/g, "")}">
+                    ${String(item.payment_status || item.status).replace(/_/g, " ")}
+                </span>
+            </td>
+            <td>
+                ${item.kind === "wallet"
+                    ? `<span class="muted" style="font-size:12px;">Not applicable</span>`
+                    : item.invoice_url
+                    ? `<a href="${invoiceDownloadUrl(item.invoice_url)}" target="_blank" class="btn ghost btn-sm" style="padding: 4px 8px; font-size:12px;">Download</a>`
+                    : `<button class="btn ghost btn-sm btn-gen-invoice" data-id="${item.booking_id}" style="padding: 4px 8px; font-size:12px;">Generate</button>`
+                }
+            </td>
+        </tr>
+    `).join("");
+
+    html += `</tbody></table>`;
+    tableContainer.innerHTML = html;
+
+    currentPage = current_page;
+    document.getElementById("pageInfo").textContent = `Page ${current_page} of ${total_pages}`;
+    document.getElementById("pagination").style.display = total_pages > 1 ? "flex" : "none";
+    document.getElementById("btnPrev").disabled = current_page === 1;
+    document.getElementById("btnNext").disabled = current_page === total_pages;
+
+    document.querySelectorAll(".btn-gen-invoice").forEach(btn => {
+        btn.onclick = async () => {
+            const id = btn.dataset.id;
+            btn.disabled = true;
+            btn.textContent = "...";
+            const res = await authFetch(`/api/bookings/${id}/invoice/generate`, { method: "POST" });
+            if (res.ok) {
+                showMkToast("Invoice generation started", "success");
+                loadHistory(currentPage);
+            } else {
+                showMkToast("Failed to generate", "error");
+                btn.disabled = false;
+                btn.textContent = "Generate";
+            }
+        };
+    });
+}
+
+document.getElementById("btnPrev").onclick = () => loadHistory(currentPage - 1);
+document.getElementById("btnNext").onclick = () => loadHistory(currentPage + 1);
+
+loadHistory();
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Grievance Redressal | Sklio{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Grievance Officer</p>
+      <h1>Complaint intake, acknowledgement, review, and escalation timeline.</h1>
+      <p class="muted hero-copy">
+        Trust and legal issues should move through one predictable path so users know when they will hear back and what evidence is needed.
+      </p>
+    </div>
+    <div class="policy-meta">
+      <span class="small-pill">Acknowledgement target: 24 hours</span>
+      <span class="small-pill">Standard resolution target: 15 days</span>
+    </div>
+  </div>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <h2>Contact channel</h2>
+    <p class="muted">{{ grievance_officer_name }} can be reached at {{ grievance_email }} and {{ grievance_phone }}. Users can file complaints in-app and by email using this monitored redressal channel.</p>
+  </article>
+  <article class="feature-card">
+    <h2>Priority handling</h2>
+    <p class="muted">High-risk trust or safety cases, including harassment, identity misuse, and provider no-show patterns, should be triaged within 4 hours.</p>
+  </article>
+  <article class="feature-card">
+    <h2>Audit trail</h2>
+    <p class="muted">Each complaint should retain timestamps, handler identity, evidence links, resolution code, and customer-facing explanation.</p>
+  </article>
+</section>
+
+<section class="card landing-section">
+  <div class="policy-list">
+    <article class="policy-item">
+      <h2>Step 1: Submit complaint</h2>
+      <p class="muted">The complaint may be filed through booking support, dispute submission, or a designated grievance contact flow.</p>
+    </article>
+    <article class="policy-item">
+      <h2>Step 2: Acknowledge receipt</h2>
+      <p class="muted">Acknowledgement should be sent within 24 hours with a complaint reference number and next-step summary.</p>
+    </article>
+    <article class="policy-item">
+      <h2>Step 3: Review evidence</h2>
+      <p class="muted">Relevant evidence may include chat logs, call notes, booking timeline, location pings, photo uploads, refunds, payout state, and verification records.</p>
+    </article>
+    <article class="policy-item">
+      <h2>Step 4: Issue resolution</h2>
+      <p class="muted">Standard grievances should be resolved within 15 days. Safety, identity, or legal escalation cases may require restricted accounts or temporary payout holds during review.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}

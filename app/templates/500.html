@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error | Sklio{% endblock %}
+
+{% block content %}
+<section class="dashboard-shell" style="min-height: 60vh; display: flex; align-items: center; justify-content: center; text-align: center;">
+  <div class="card mk-card" style="padding: 48px; max-width: 480px; margin: 0 auto;">
+    <h1 style="font-size: 4rem; color: var(--error-600, #dc2626); margin-bottom: 16px;">500</h1>
+    <h2 class="mk-heading">Internal Server Error</h2>
+    <p class="mk-body-md muted" style="margin-bottom: 32px;">Something went wrong on our end. We're on it. Please try again in a few minutes.</p>
+    <div style="display: flex; gap: 16px; justify-content: center;">
+      <button onclick="window.location.reload()" class="btn ghost">Try again</button>
+      <a href="/home" class="btn primary">Go back home</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Messages | Sklio{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="card mk-card">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div>
+        <h2 class="mk-display-md">Messages</h2>
+        <p class="mk-body-sm">Open booking chats and private service inquiries.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="roomSearch" placeholder="Search conversations" style="min-width:220px;" />
+        <button id="retryRoomsBtn" type="button" class="btn ghost">Refresh</button>
+      </div>
+    </div>
+    <div id="rooms" style="margin-top:16px;"></div>
+    <div style="display:flex;justify-content:center;margin-top:16px;">
+      <button id="loadMoreRoomsBtn" type="button" class="btn ghost" style="display:none;">Load more</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { initMessagesPage } from "/static/js/messages-page.js";
+
+initMessagesPage();
+</script>
+{% endblock %}

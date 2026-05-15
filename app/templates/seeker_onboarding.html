@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Get Started | Sklio{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Seeker Onboarding</p>
+      <h1>From install to first confirmed booking, designed to feel fast and trustworthy.</h1>
+      <p class="muted hero-copy">
+        The seeker path is built to delay permissions until they are useful, surface trust before payment, and preserve momentum from the first search to the first booking.
+      </p>
+    </div>
+    <div class="policy-nav">
+      <a class="btn primary small" href="{{ url_for('front.demo_login') }}?mode=register&role=seeker">Create seeker account</a>
+      <a class="btn ghost small" href="{{ url_for('front.demo_login') }}?mode=login&role=seeker">Seeker login</a>
+      <a class="btn ghost small" href="{{ url_for('front.home') }}">Browse services</a>
+    </div>
+  </div>
+</section>
+
+<section class="policy-grid">
+  <article class="feature-card">
+    <p class="eyebrow">Activation Milestone</p>
+    <h2>What counts as activated?</h2>
+    <p class="muted">A seeker is activated when the first booking reaches confirmed state within the same session or within 24 hours of the first booking attempt.</p>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Trust Signals</p>
+    <h2>What the seeker should see early.</h2>
+    <p class="muted">Verified providers, transparent pricing, ratings, next available slots, and protected in-app chat should appear before checkout.</p>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">What Can Wait</p>
+    <h2>Deferred until there is clear intent.</h2>
+    <p class="muted">Saved addresses, notification permission, payment save, profile photo, and marketing consent can all be deferred until later.</p>
+  </article>
+</section>
+
+<section class="card landing-section">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Screen Flow</p>
+      <h2>Recommended step-by-step seeker journey</h2>
+    </div>
+  </div>
+  <ol class="step-list">
+    <li class="step-item"><strong>Welcome and role choice.</strong><span class="muted">Route the user correctly and set trust expectations from the first screen.</span></li>
+    <li class="step-item"><strong>Mobile and OTP.</strong><span class="muted">Use secure login before any irreversible step or private booking state.</span></li>
+    <li class="step-item"><strong>Name and lightweight setup.</strong><span class="muted">Collect only what is required for receipts, support, and search relevance.</span></li>
+    <li class="step-item"><strong>Search and compare.</strong><span class="muted">Let seekers browse with filters, compare providers, and understand trust before committing.</span></li>
+    <li class="step-item"><strong>Booking or quote mode.</strong><span class="muted">Fixed work moves into slot booking, while custom jobs move into structured quote requests.</span></li>
+    <li class="step-item"><strong>Checkout.</strong><span class="muted">Ask for address, payment, and promos only at the point where the user already has booking intent.</span></li>
+    <li class="step-item"><strong>Post-booking operations.</strong><span class="muted">Move directly into private chat, notifications, live tracking, dispute support, and review prompts.</span></li>
+  </ol>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <h3>Permission strategy</h3>
+    <p class="muted">Location is requested only when the user wants nearby results. Notifications are requested after search or booking intent, not on app launch.</p>
+  </article>
+  <article class="feature-card">
+    <h3>48-hour recovery</h3>
+    <p class="muted">If no booking happens, re-engage with last-search recall, verified-provider prompts, and a first-booking promo only for qualified low-intent seekers.</p>
+  </article>
+  <article class="feature-card">
+    <h3>Support promise</h3>
+    <p class="muted">If something fails, seekers should get exact recovery copy, preserved drafts, and a clear next step instead of a dead end.</p>
+  </article>
+</section>
+{% endblock %}

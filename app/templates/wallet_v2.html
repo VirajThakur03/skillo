@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}Wallet | Sklio Premium{% endblock %}
+
+{% block content %}
+<section class="dashboard-shell mk-fade-in">
+    <div class="card dashboard-hero" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: white;">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow" style="color: #94a3b8;">SKLIO DIGITAL WALLET</p>
+                <h1 style="color: white; margin-bottom: 8px;">Managed Credits & Earnings</h1>
+                <p class="muted" style="color: #cbd5e1;">Track rewards, load credits for instant bookings, and view earnings history.</p>
+            </div>
+            <div class="wallet-actions">
+                <button class="btn primary" id="btnTopUp" style="background: white; color: #0f172a; border: none;">+ Top Up Wallet</button>
+            </div>
+        </div>
+
+        <div class="wallet-balance-container" style="margin-top: 32px; display: flex; gap: 40px; align-items: flex-end;">
+            <div>
+                <p class="mk-label-upper" style="color: #94a3b8; font-size: 12px; margin-bottom: 4px;">AVAILABLE BALANCE</p>
+                <h2 style="font-size: 48px; font-weight: 700; margin: 0;" id="walletBalance">INR 0.00</h2>
+            </div>
+            <div id="pendingEarnings" style="opacity: 0.7;">
+                <p class="mk-label-upper" style="color: #94a3b8; font-size: 10px; margin-bottom: 4px;">PENDING CLEARANCE</p>
+                <h4 style="font-size: 18px; font-weight: 500; margin: 0;" id="walletPending">INR 0.00</h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="card dashboard-section" style="margin-top: 24px;">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow">ACTIVITY</p>
+                <h2>Transaction History</h2>
+            </div>
+            <div class="filter-group">
+                <select id="typeFilter" class="mk-input" style="width: auto;">
+                    <option value="">All Types</option>
+                    <option value="CREDIT_EARNING">Earnings</option>
+                    <option value="CREDIT_TOPUP">Top-ups</option>
+                    <option value="DEBIT_COMMISSION">Platform Fees</option>
+                    <option value="CREDIT_REFUND">Refunds</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="transactionsContainer" class="mk-empty-state">
+            <p class="muted">Loading transaction history...</p>
+        </div>
+
+        <div id="pagination" class="mk-pagination" style="margin-top: 24px; display: none;">
+            <button class="btn ghost" id="btnPrev">Previous</button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button class="btn ghost" id="btnNext">Next</button>
+        </div>
+    </div>
+</section>
+
+<div id="topUpModal" class="mk-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div class="card" style="width: 100%; max-width: 400px; background: white; padding: 32px; border-radius: 16px;">
+        <h3 class="mk-heading" style="margin-top: 0;">Top Up Wallet</h3>
+        <p class="muted" style="margin-bottom: 24px;">Add credits for faster booking checkout using Sklio's secure payment flow.</p>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+            <label class="mk-label">Amount (INR)</label>
+            <input type="number" id="topUpAmount" class="mk-input" placeholder="Min Rs 100" min="100" value="500">
+        </div>
+
+        <div class="amount-presets" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 24px;">
+            <button class="btn ghost btn-preset" data-val="500">Rs 500</button>
+            <button class="btn ghost btn-preset" data-val="1000">Rs 1000</button>
+            <button class="btn ghost btn-preset" data-val="2000">Rs 2000</button>
+        </div>
+
+        <div style="display: flex; gap: 12px;">
+            <button class="btn primary" id="btnConfirmTopUp" style="flex: 1;">Pay Now</button>
+            <button class="btn ghost" id="btnCancelTopUp">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.dashboard-shell { max-width: 900px; margin: 0 auto; padding: 20px; }
+.card { border-radius: 16px; padding: 24px; border: 1px solid #e2e8f0; background: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+.dashboard-hero { border: none; }
+.section-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.05em; color: #64748b; margin: 0 0 8px 0; }
+.muted { color: #64748b; font-size: 14px; margin: 0; }
+.mk-input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 16px; }
+.mk-input:focus { border-color: #3b82f6; outline: none; }
+.transaction-item { display: flex; justify-content: space-between; padding: 16px; border-bottom: 1px solid #f1f5f9; align-items: center; }
+.transaction-item:last-child { border-bottom: none; }
+.amount-positive { color: #10b981; font-weight: 600; }
+.amount-negative { color: #ef4444; font-weight: 600; }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script type="module">
+import { authFetch, showMkToast } from "/static/js/main.js";
+
+const walletBalanceEl = document.getElementById("walletBalance");
+const walletPendingEl = document.getElementById("walletPending");
+const transactionsContainer = document.getElementById("transactionsContainer");
+const topUpModal = document.getElementById("topUpModal");
+const topUpAmountInput = document.getElementById("topUpAmount");
+
+let currentPage = 1;
+let walletSocket = null;
+
+async function loadWallet() {
+    const response = await authFetch("/api/wallet/v2/balance");
+    if (!response.ok) return;
+
+    walletBalanceEl.textContent = `INR ${Number(response.data.balance || 0).toFixed(2)}`;
+    walletPendingEl.textContent = `INR ${Number(response.data.pending_earnings || 0).toFixed(2)}`;
+}
+
+async function loadTransactions(page = 1) {
+    const type = document.getElementById("typeFilter").value;
+    const response = await authFetch(`/api/wallet/v2/transactions?page=${page}&type=${encodeURIComponent(type)}`);
+
+    if (!response.ok) {
+        transactionsContainer.innerHTML = `<p class="muted">Error loading history.</p>`;
+        return;
+    }
+
+    const { items, total_pages, current_page } = response.data;
+    if (!items || items.length === 0) {
+        transactionsContainer.innerHTML = `<div class="mk-empty-state"><p class="muted">No transactions found.</p></div>`;
+        document.getElementById("pagination").style.display = "none";
+        return;
+    }
+
+    transactionsContainer.innerHTML = items.map(tx => `
+        <div class="transaction-item">
+            <div>
+                <div style="font-weight: 600; font-size: 15px;">${tx.title || tx.type.replace(/_/g, " ")}</div>
+                <div class="muted" style="font-size: 12px;">${new Date(tx.created_at).toLocaleString()} • ${tx.reference || "No ref"}</div>
+            </div>
+            <div class="${Number(tx.amount) >= 0 ? "amount-positive" : "amount-negative"}">
+                ${Number(tx.amount) >= 0 ? "+" : ""}${Number(tx.amount).toFixed(2)}
+            </div>
+        </div>
+    `).join("");
+
+    currentPage = current_page;
+    document.getElementById("pageInfo").textContent = `Page ${current_page} of ${total_pages}`;
+    document.getElementById("pagination").style.display = total_pages > 1 ? "flex" : "none";
+    document.getElementById("btnPrev").disabled = current_page === 1;
+    document.getElementById("btnNext").disabled = current_page === total_pages;
+}
+
+document.getElementById("btnTopUp").onclick = () => topUpModal.style.display = "flex";
+document.getElementById("btnCancelTopUp").onclick = () => topUpModal.style.display = "none";
+
+document.querySelectorAll(".btn-preset").forEach(btn => {
+    btn.onclick = () => {
+        topUpAmountInput.value = btn.dataset.val;
+    };
+});
+
+document.getElementById("btnConfirmTopUp").onclick = async () => {
+    const amount = Number(topUpAmountInput.value);
+    if (amount < 100) {
+        showMkToast("Minimum top-up is Rs 100", "error");
+        return;
+    }
+
+    const btn = document.getElementById("btnConfirmTopUp");
+    btn.disabled = true;
+    btn.textContent = "Processing...";
+
+    const res = await authFetch("/api/wallet/v2/topup", {
+        method: "POST",
+        body: JSON.stringify({ amount })
+    });
+
+    if (!res.ok) {
+        showMkToast(res.data?.error || "Failed to initiate payment", "error");
+        btn.disabled = false;
+        btn.textContent = "Pay Now";
+        return;
+    }
+
+    if (res.data?.provider === "mock") {
+        showMkToast("Top-up successful", "success");
+        topUpModal.style.display = "none";
+        btn.disabled = false;
+        btn.textContent = "Pay Now";
+        loadWallet();
+        loadTransactions(1);
+        return;
+    }
+
+    if (res.data?.provider === "stripe" && res.data?.checkout_url) {
+        topUpModal.style.display = "none";
+        window.location.assign(res.data.checkout_url);
+        return;
+    }
+
+    if (!window.Razorpay) {
+        showMkToast("Payment widget unavailable. Please refresh and try again.", "error");
+        btn.disabled = false;
+        btn.textContent = "Pay Now";
+        return;
+    }
+
+    const options = {
+        key: res.data.razorpay_key_id,
+        amount: res.data.amount_paise,
+        currency: "INR",
+        name: "Sklio Wallet",
+        description: "Wallet Top-up",
+        order_id: res.data.order_id,
+        handler: async function () {
+            showMkToast("Payment successful! Updating wallet...", "success");
+            topUpModal.style.display = "none";
+            btn.disabled = false;
+            btn.textContent = "Pay Now";
+            setTimeout(() => {
+                loadWallet();
+                loadTransactions(1);
+            }, 2000);
+        },
+        modal: {
+            ondismiss: function() {
+                btn.disabled = false;
+                btn.textContent = "Pay Now";
+            }
+        },
+        theme: { color: "#0f172a" }
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.open();
+};
+
+document.getElementById("typeFilter").onchange = () => loadTransactions(1);
+document.getElementById("btnPrev").onclick = () => loadTransactions(currentPage - 1);
+document.getElementById("btnNext").onclick = () => loadTransactions(currentPage + 1);
+
+function initRealtimeWallet() {
+    const token = localStorage.getItem("sklio_access_token") || localStorage.getItem("skl_token");
+    if (!token || typeof io === "undefined") return;
+    try {
+        walletSocket = io({
+            auth: { token },
+            transports: ["websocket", "polling"],
+        });
+        walletSocket.on("connect", () => {
+            loadWallet();
+            loadTransactions(currentPage);
+        });
+        walletSocket.on("wallet_updated", () => {
+            loadWallet();
+            loadTransactions(currentPage);
+        });
+    } catch (err) {
+        console.warn("Wallet realtime unavailable:", err);
+    }
+}
+
+loadWallet();
+loadTransactions();
+initRealtimeWallet();
+</script>
+{% endblock %}

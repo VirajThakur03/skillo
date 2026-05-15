@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Saved Providers | Sklio{% endblock %}
+{% block content %}
+<section class="section mk-fade-in">
+  <div class="card mk-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div>
+        <h2 class="mk-display-md">Saved providers</h2>
+        <p class="mk-body-sm">Providers you have hearted for quick rebooking.</p>
+      </div>
+      <button type="button" class="btn ghost" id="savedRefreshBtn">Refresh</button>
+    </div>
+    <div id="savedList" style="margin-top:16px;"></div>
+    <p id="savedError" class="mk-body-sm" style="color:var(--danger-600);display:none;"></p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, getToken, getCurrentUser } from "/static/js/main.js";
+import { bindFavoriteButtons, applyFavoriteSavedState } from "/static/js/favorites.js";
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function loadSaved() {
+  const host = document.getElementById("savedList");
+  const errEl = document.getElementById("savedError");
+  const refreshBtn = document.getElementById("savedRefreshBtn");
+  errEl.style.display = "none";
+  refreshBtn.disabled = true;
+
+  if (!getToken()) {
+    window.location.replace("/demo_login");
+    return;
+  }
+  const user = await getCurrentUser(true);
+  if (!user || user.role !== "SEEKER") {
+    host.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">Only seekers can view saved providers.</p></div>`;
+    return;
+  }
+
+  host.innerHTML = `<div class="mk-loading-stack"><div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div></div>`;
+
+  const res = await authFetch("/api/favorites?limit=50");
+  if (!res.ok) {
+    errEl.textContent = res.data?.error || "Unable to load saved providers.";
+    errEl.style.display = "block";
+    host.innerHTML = "";
+    refreshBtn.disabled = false;
+    return;
+  }
+
+  const items = res.data.items || [];
+  if (items.length === 0) {
+    host.innerHTML = `
+      <div class="mk-card" style="max-width:360px;margin:24px auto;text-align:center;">
+        <div style="margin-bottom:16px;color:var(--brand-200);"><i data-lucide="heart" style="width:56px;height:56px;"></i></div>
+        <h3 class="mk-heading">You haven't saved any providers yet</h3>
+        <p class="mk-body-sm">You haven't saved any providers yet. Heart a provider to save them.</p>
+        <a class="btn primary" href="/home" style="margin-top:12px;">Browse skills</a>
+      </div>
+    `;
+    refreshBtn.disabled = false;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  host.innerHTML = items.map((row) => {
+    const p = row.provider || {};
+    const sid = row.skill_id;
+    const bookHref = sid ? `/booking/${sid}?provider=${p.id}` : "/home";
+    const savedAt = row.saved_at ? new Date(row.saved_at).toLocaleDateString() : "";
+    const chips = [];
+    if (p.response_label) {
+      chips.push(`<span class="mk-provider-metric-chip mk-provider-metric-chip--response"><i data-lucide="zap" style="width:12px;height:12px;"></i>${escapeHtml(p.response_label)}</span>`);
+    }
+    if (p.acceptance_rate != null && Number(p.acceptance_rate) >= 70) {
+      chips.push(`<span class="mk-provider-metric-chip mk-provider-metric-chip--accept"><i data-lucide="circle-check" style="width:12px;height:12px;"></i>${escapeHtml(String(Math.round(Number(p.acceptance_rate))))}%</span>`);
+    }
+    return `
+      <article class="mk-card mk-card-booking mk-booking-accent" data-mk-saved-card="${p.id}" style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+          <div>
+            <strong class="mk-subheading">${escapeHtml(p.name)}</strong>
+            <p class="mk-body-sm">⭐ ${Number(p.rating || 0).toFixed(1)} · ${escapeHtml(p.location || "—")}</p>
+            ${chips.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${chips.join("")}</div>` : ""}
+            ${row.skill_title ? `<p class="mk-body-sm" style="margin-top:8px;">${escapeHtml(row.skill_title)}${row.starting_price != null ? ` · From ₹${escapeHtml(String(Math.round(Number(row.starting_price))))}` : ""}</p>` : ""}
+            ${savedAt ? `<p class="mk-label">Saved ${escapeHtml(savedAt)}</p>` : ""}
+          </div>
+          </div>
+          <div style="flex-shrink:0;">
+          <button type="button" class="mk-favorite-btn is-saved" data-mk-favorite-for="${p.id}" aria-label="Remove saved provider" aria-pressed="true">
+            <i data-lucide="heart"></i>
+          </button>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+           <textarea class="notes-input" data-provider="${p.id}" placeholder="Add private notes about this provider..." style="width:100%;min-height:60px;resize:vertical;border:1px solid var(--gray-300);border-radius:8px;padding:8px;font-family:inherit;font-size:14px;color:var(--gray-700);">${escapeHtml(row.notes || "")}</textarea>
+           <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+               <button class="btn secondary btn-save-notes" data-provider="${p.id}" style="display:none;" type="button">Save Notes</button>
+           </div>
+        </div>
+        <div class="actions" style="margin-top:12px;">
+          <a class="btn primary" href="${bookHref}">Book</a>
+          <a class="btn ghost" href="/home">Find more</a>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  // Attach notes listeners
+  host.querySelectorAll('.notes-input').forEach(ta => {
+      ta.addEventListener('input', (e) => {
+          const btn = document.querySelector(`.btn-save-notes[data-provider="${e.target.dataset.provider}"]`);
+          if (btn) btn.style.display = "inline-flex";
+      });
+  });
+  
+  host.querySelectorAll('.btn-save-notes').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+          const pid = e.target.dataset.provider;
+          const ta = document.querySelector(`.notes-input[data-provider="${pid}"]`);
+          const notes = ta ? ta.value : "";
+          
+          btn.disabled = true;
+          btn.innerText = "Saving...";
+          
+          try {
+              const res = await authFetch(`/api/favorites/${pid}/notes`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ notes })
+              });
+              
+              if (res.ok) {
+                  btn.style.display = "none";
+              } else {
+                  console.error("Failed to save notes", res.data);
+              }
+          } catch(err) {
+              console.error(err);
+          } finally {
+              btn.disabled = false;
+              btn.innerText = "Save Notes";
+          }
+      });
+  });
+
+  bindFavoriteButtons(host);
+  await applyFavoriteSavedState(host);
+  refreshBtn.disabled = false;
+  if (window.lucide) window.lucide.createIcons();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadSaved();
+  document.getElementById("savedRefreshBtn")?.addEventListener("click", loadSaved);
+  document.addEventListener("mk:favorite-toggled", (event) => {
+    if (!event.detail || event.detail.saved) return;
+    const card = document.querySelector(`[data-mk-saved-card="${event.detail.providerId}"]`);
+    if (card) card.remove();
+    const host = document.getElementById("savedList");
+    if (host && !host.querySelector("[data-mk-saved-card]")) {
+      loadSaved();
+    }
+  });
+});
+</script>
+{% endblock %}

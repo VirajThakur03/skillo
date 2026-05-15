@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Account Settings — Sklio{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: var(--space-4);">
+  <h1>Account Settings</h1>
+</div>
+
+<div class="grid" style="grid-template-columns: 1fr; gap: var(--space-4); max-width: 600px;">
+  
+  <div class="card p-4">
+    <h3 style="margin-bottom: var(--space-3);">Profile Details</h3>
+    <form id="profileForm" onsubmit="event.preventDefault(); updateProfile();">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="profileName" class="form-control" placeholder="Your name">
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="tel" id="profilePhone" class="form-control" placeholder="Your phone number">
+      </div>
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="profileEmail" class="form-control" disabled style="background: var(--surface-2); color: var(--muted);">
+        <small class="text-muted mt-1" style="display:block;">Email cannot be changed.</small>
+      </div>
+      <button type="submit" class="btn primary" id="saveProfileBtn">Save Changes</button>
+    </form>
+  </div>
+
+  <div class="card p-4">
+    <h3 style="margin-bottom: var(--space-3);">Danger Zone</h3>
+    <p style="color: var(--muted); margin-bottom: var(--space-3);">Once you delete your account, there is no going back. Please be certain.</p>
+    <button class="btn" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5;" onclick="deleteAccount()">
+      Delete Account
+    </button>
+  </div>
+
+  <div class="card p-4">
+    <h3 style="margin-bottom: var(--space-3);">Account Tools</h3>
+    <p style="color: var(--muted); margin-bottom: var(--space-3);">Quick links and export tools are tailored to your role.</p>
+    <div id="settingsRoleSections" class="grid" style="grid-template-columns: 1fr; gap: var(--space-3);"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import {
+  authFetch,
+  getCurrentUser,
+  logout,
+  setCachedUser,
+  showMkToast,
+} from "/static/js/main.js";
+
+const nameInput = document.getElementById("profileName");
+const phoneInput = document.getElementById("profilePhone");
+const emailInput = document.getElementById("profileEmail");
+const saveProfileBtn = document.getElementById("saveProfileBtn");
+const roleSections = document.getElementById("settingsRoleSections");
+
+function quickLinkCard(title, copy, href, actionLabel = "Open") {
+  return `
+    <article class="card" style="padding: 16px; border: 1px solid var(--border-color); background: var(--surface-2);">
+      <strong style="display:block; margin-bottom: 6px;">${title}</strong>
+      <p style="margin: 0 0 12px; color: var(--muted);">${copy}</p>
+      <a class="btn secondary small" href="${href}">${actionLabel}</a>
+    </article>
+  `;
+}
+
+function renderRoleSections(user) {
+  if (!roleSections || !user) return;
+
+  const shared = [
+    quickLinkCard("Notification Preferences", "Choose how Sklio reaches you for bookings, chat, and updates.", "/notifications"),
+    quickLinkCard("Wallet & Payment History", "Track top-ups, commissions, refunds, and invoices.", "/wallet", "View wallet"),
+    `
+      <article class="card" style="padding: 16px; border: 1px solid var(--border-color); background: var(--surface-2);">
+        <strong style="display:block; margin-bottom: 6px;">Export My Data</strong>
+        <p style="margin: 0 0 12px; color: var(--muted);">Download your account snapshot for support, portability, or backup.</p>
+        <button type="button" class="btn secondary small" id="exportAccountBtn">Download export</button>
+      </article>
+    `,
+  ];
+
+  const providerOnly = [
+    quickLinkCard("Provider Profile", "Update portfolio, service details, and public profile information.", "/provider/profile"),
+    quickLinkCard("Availability Calendar", "Manage your bookable schedule and availability windows.", "/provider-availability"),
+    quickLinkCard("KYC & Verification", "Review verification status and re-upload documents if needed.", "/provider/kyc-status", "Review KYC"),
+  ];
+
+  const seekerOnly = [
+    quickLinkCard("Saved Providers", "Jump back into providers you’ve shortlisted.", "/saved-providers"),
+    quickLinkCard("My Bookings", "Review timelines, invoices, and chat access for your bookings.", "/my-bookings"),
+    quickLinkCard("Payment History", "Download invoices and review completed financial activity.", "/payment-history"),
+  ];
+
+  roleSections.innerHTML = [
+    ...(user.role === "PROVIDER" ? providerOnly : seekerOnly),
+    ...shared,
+  ].join("");
+
+  const exportBtn = document.getElementById("exportAccountBtn");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", exportAccountData);
+  }
+}
+
+function setButtonLoading(button, loading) {
+  if (!button) return;
+  button.disabled = loading;
+  button.dataset.originalLabel ||= button.textContent;
+  button.textContent = loading ? "Saving..." : button.dataset.originalLabel;
+}
+
+async function loadProfile() {
+  const user = await getCurrentUser(true);
+  if (!user) {
+    window.location.replace("/demo_login");
+    return;
+  }
+
+  nameInput.value = user.name || "";
+  phoneInput.value = user.phone || "";
+  emailInput.value = user.email || "";
+  renderRoleSections(user);
+}
+
+async function exportAccountData() {
+  const res = await authFetch("/api/account/export", { method: "GET" });
+  if (!res.ok) {
+    showMkToast(res.data?.error || "Failed to export account data", "error");
+    return;
+  }
+
+  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "sklio-account-export.json";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  showMkToast("Account export downloaded", "success");
+}
+
+window.updateProfile = async function updateProfile() {
+  const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
+
+  setButtonLoading(saveProfileBtn, true);
+  try {
+    const res = await authFetch("/api/account/profile", {
+      method: "PATCH",
+      body: JSON.stringify({ name, phone }),
+    });
+
+    if (!res.ok) {
+      showMkToast(res.data?.error || "Failed to update profile", "error");
+      return;
+    }
+
+    const currentUser = await getCurrentUser(true);
+    if (currentUser) {
+      currentUser.name = res.data?.name || currentUser.name;
+      currentUser.phone = res.data?.phone || currentUser.phone;
+      setCachedUser(currentUser);
+    }
+
+    showMkToast("Profile updated successfully", "success");
+    setTimeout(() => window.location.reload(), 500);
+  } catch (error) {
+    showMkToast("Network error updating profile", "error");
+  } finally {
+    setButtonLoading(saveProfileBtn, false);
+  }
+};
+
+window.deleteAccount = async function deleteAccount() {
+  if (!confirm("Are you absolutely sure you want to delete your account? This action cannot be undone.")) {
+    return;
+  }
+
+  const res = await authFetch("/api/account", { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    showMkToast(res.data?.error || "Failed to delete account", "error");
+    return;
+  }
+
+  showMkToast("Account deleted", "success");
+  setTimeout(() => logout(), 400);
+};
+
+document.addEventListener("DOMContentLoaded", loadProfile);
+</script>
+{% endblock %}

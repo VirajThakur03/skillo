@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy | Sklio{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Privacy Policy</p>
+      <h1>What data Sklio collects, why it is used, and how long it stays.</h1>
+      <p class="muted hero-copy">
+        Sklio uses personal data to authenticate users, match services, process payments, investigate disputes, prevent fraud, and comply with Indian legal requirements.
+      </p>
+    </div>
+    <div class="policy-meta">
+      <span class="small-pill">DPDPA-aligned operating model</span>
+      <span class="small-pill">Last updated: {{ legal_last_updated }}</span>
+    </div>
+  </div>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <h2>Data collected</h2>
+    <ul class="policy-bullets">
+      <li>Account data: name, phone number, email, role</li>
+      <li>Booking data: service, address, schedule, notes, invoices</li>
+      <li>Trust data: identity verification results, selfie or liveness outcome, review history, dispute evidence</li>
+      <li>Operational data: chat, live tracking pings, notification preferences, device and login signals</li>
+      <li>Payment data: provider references, settlement references, and wallet credits, but not full raw card storage</li>
+    </ul>
+  </article>
+  <article class="feature-card">
+    <h2>Retention model</h2>
+    <ul class="policy-bullets">
+      <li>Booking, invoice, and settlement records: 8 years</li>
+      <li>Chat and dispute evidence: 3 years after booking close unless legal hold applies</li>
+      <li>Raw location pings: 90 days</li>
+      <li>Successful verification media: 180 days unless longer retention is required</li>
+      <li>Failed verification media: 90 days unless abuse review requires extension</li>
+    </ul>
+  </article>
+  <article class="feature-card">
+    <h2>User rights</h2>
+    <ul class="policy-bullets">
+      <li>Access your data summary</li>
+      <li>Correct or complete your information</li>
+      <li>Request erasure when retention is no longer legally required</li>
+      <li>Withdraw consent for consent-based processing</li>
+      <li>File a grievance through the published redressal channel</li>
+    </ul>
+  </article>
+</section>
+
+<section class="card landing-section">
+  <div class="policy-list">
+    <article class="policy-item">
+      <h2>Third-party sharing</h2>
+      <p class="muted">Sklio shares limited data with specific trusted partners to operate our services. This includes <strong>Stripe</strong> for payment processing and fraud prevention, <strong>OpenAI</strong> for AI-assisted chat and matching, cloud infrastructure vendors, identity verification providers, and analytics tools. We also share data with legal authorities where required by law.</p>
+    </article>
+    <article class="policy-item">
+      <h2>Data localization and storage</h2>
+      <p class="muted">Primary operational storage for user identity, provider verification, booking records, disputes, and payment-system-linked data should remain on Indian infrastructure. Payment system data must follow RBI localization requirements.</p>
+    </article>
+    <article class="policy-item">
+      <h2>Security model</h2>
+      <p class="muted">Sklio uses authenticated sessions, role-based access, audit logs, rate limits, payout holds, and fraud review queues to reduce misuse and unauthorized access.</p>
+    </article>
+    <article class="policy-item">
+      <h2>How to contact us</h2>
+      <p class="muted">Privacy or data-rights requests may be filed through the grievance process or by contacting {{ grievance_email }}. Standard acknowledgement should be immediate or same day, with a human review target within 72 hours for standard requests.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}

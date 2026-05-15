@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Provider KYC Center | Sklio{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="card mk-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+      <div>
+        <span class="chip">Provider KYC center</span>
+        <h2 class="mk-display-md" style="margin-top:8px;">Verification, discoverability, and next steps</h2>
+        <p class="mk-body-sm muted">See what is still required, what is under review, and what affects search visibility versus new job eligibility.</p>
+      </div>
+      <a class="btn ghost" href="/provider/dashboard">Back to dashboard</a>
+    </div>
+
+    <div id="kycBanner" class="card mk-card" style="margin-top:16px;"></div>
+
+    <div class="grid grid-3" style="margin-top:16px;">
+      <div class="card mk-card">
+        <h3 class="mk-heading">Marketplace visibility</h3>
+        <p class="mk-body-sm" id="discoverabilityState">Loading...</p>
+      </div>
+      <div class="card mk-card">
+        <h3 class="mk-heading">New job acceptance</h3>
+        <p class="mk-body-sm" id="jobAcceptanceState">Loading...</p>
+      </div>
+      <div class="card mk-card">
+        <h3 class="mk-heading">Expected review SLA</h3>
+        <p class="mk-body-sm" id="reviewSla">Loading...</p>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:16px;">
+      <div class="card mk-card">
+        <h3 class="mk-heading">Required checklist</h3>
+        <div id="kycChecklist"></div>
+      </div>
+      <div class="card mk-card">
+        <h3 class="mk-heading">Upload or re-upload documents</h3>
+        <p class="mk-body-sm muted">Use this to complete missing items or replace rejected ones.</p>
+        <form id="kycUploadForm" style="margin-top:12px;display:grid;gap:12px;">
+          <label class="mk-body-sm" for="docType">Document type</label>
+          <select id="docType" required></select>
+          <input id="kycFile" type="file" accept=".jpg,.jpeg,.png,.pdf" required>
+          <button class="btn primary" type="submit" id="kycUploadBtn">Upload document</button>
+          <div id="kycUploadStatus" class="mk-body-sm"></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mk-card" style="margin-top:16px;">
+      <h3 class="mk-heading">Submission timeline</h3>
+      <div id="kycTimeline" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card mk-card" style="margin-top:16px;">
+      <h3 class="mk-heading">Uploaded documents</h3>
+      <div id="kycDocuments" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, showMkToast } from "/static/js/main.js";
+
+const statusEndpoint = "/api/kyc/status";
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function humanDate(value) {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function checklistRow(item, remaining, shouldReupload) {
+  const done = !remaining;
+  return `
+    <div class="mk-card" style="padding:10px;margin-bottom:10px;border-left:3px solid ${done ? "var(--success-500)" : "var(--brand-300)"};">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div>
+          <div class="mk-heading">${escapeHtml(item.label)}</div>
+          <div class="mk-body-sm muted">${done ? "Submitted" : "Still required"}</div>
+        </div>
+        <span class="chip ${done ? "success" : ""}">${done ? "Ready" : (shouldReupload ? "Re-upload" : "Required")}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderDocuments(documents) {
+  const host = document.getElementById("kycDocuments");
+  if (!documents || documents.length === 0) {
+    host.innerHTML = "<p class='mk-body-sm muted'>No KYC files uploaded yet.</p>";
+    return;
+  }
+  host.innerHTML = documents.map((document) => `
+    <div class="mk-card" style="padding:10px;margin-bottom:10px;">
+      <div class="mk-heading">${escapeHtml(document.label)}</div>
+      <div class="mk-body-sm muted">Uploaded ${escapeHtml(humanDate(document.created_at))}</div>
+    </div>
+  `).join("");
+}
+
+function renderTimeline(data) {
+  const host = document.getElementById("kycTimeline");
+  const events = [
+    { label: "Submitted", value: data.submitted_at },
+    { label: "Approved", value: data.approved_at },
+    { label: "Rejected", value: data.rejected_at },
+  ].filter((event) => event.value);
+  if (events.length === 0) {
+    host.innerHTML = "<p class='mk-body-sm muted'>Timeline will appear once documents are submitted.</p>";
+    return;
+  }
+  host.innerHTML = events.map((event) => `
+    <div class="mk-card" style="padding:10px;margin-bottom:10px;">
+      <div class="mk-heading">${escapeHtml(event.label)}</div>
+      <div class="mk-body-sm muted">${escapeHtml(humanDate(event.value))}</div>
+    </div>
+  `).join("");
+}
+
+function populateDocOptions(data) {
+  const select = document.getElementById("docType");
+  const preferred = data.reupload_document_types?.length ? data.reupload_document_types : data.required_documents.map((item) => item.doc_type);
+  select.innerHTML = data.required_documents.map((item) => `
+    <option value="${escapeHtml(item.doc_type)}" ${preferred.includes(item.doc_type) ? "" : ""}>${escapeHtml(item.label)}</option>
+  `).join("");
+}
+
+async function loadKycStatus() {
+  const response = await authFetch(statusEndpoint);
+  if (!response.ok) {
+    document.getElementById("kycBanner").innerHTML = `<p class="mk-body-sm">${escapeHtml(response.data?.error || "Unable to load KYC status.")}</p>`;
+    return null;
+  }
+
+  const data = response.data;
+  document.getElementById("kycBanner").innerHTML = `
+    <div class="mk-heading">${escapeHtml(data.status_title)}</div>
+    <p class="mk-body-sm" style="margin-top:6px;">${escapeHtml(data.status_description)}</p>
+    ${data.rejection_reason ? `<p class="mk-body-sm" style="margin-top:6px;color:var(--danger-600);">Rejection reason: ${escapeHtml(data.rejection_reason)}</p>` : ""}
+  `;
+  document.getElementById("discoverabilityState").textContent = data.discoverability_blocked
+    ? "Blocked until KYC is approved. Your profile may still be visible internally, but it should not be actively bookable in search."
+    : "Live in search and eligible for direct marketplace discovery.";
+  document.getElementById("jobAcceptanceState").textContent = data.job_acceptance_blocked
+    ? "Blocked. Please contact support before accepting new jobs."
+    : "You can manage dashboard activity. New marketplace discoverability depends on KYC approval.";
+  document.getElementById("reviewSla").textContent = data.review_sla || "24-48 hours";
+
+  const remaining = new Set(data.required_documents_remaining || []);
+  const reupload = new Set(data.reupload_document_types || []);
+  document.getElementById("kycChecklist").innerHTML = data.required_documents.map((item) => (
+    checklistRow(item, remaining.has(item.doc_type), reupload.has(item.doc_type) && !remaining.has(item.doc_type))
+  )).join("");
+
+  renderDocuments(data.documents || []);
+  renderTimeline(data);
+  populateDocOptions(data);
+  return data;
+}
+
+document.getElementById("kycUploadForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const uploadStatus = document.getElementById("kycUploadStatus");
+  const uploadButton = document.getElementById("kycUploadBtn");
+  const docType = document.getElementById("docType").value;
+  const file = document.getElementById("kycFile").files[0];
+  if (!docType || !file) {
+    uploadStatus.textContent = "Choose a document type and file.";
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("doc_type", docType);
+  formData.append("file", file);
+  uploadButton.disabled = true;
+  uploadStatus.textContent = "Uploading...";
+
+  const response = await authFetch("/api/kyc/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  uploadButton.disabled = false;
+  if (!response.ok) {
+    uploadStatus.textContent = response.data?.error || "Upload failed.";
+    showMkToast(uploadStatus.textContent, "error");
+    return;
+  }
+
+  uploadStatus.textContent = "Document uploaded successfully.";
+  document.getElementById("kycFile").value = "";
+  showMkToast("Document uploaded successfully.", "success");
+  await loadKycStatus();
+});
+
+loadKycStatus();
+</script>
+{% endblock %}

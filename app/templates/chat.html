@@ -1,70 +1,40 @@
-<!-- app/templates/chat.html -->
 {% extends "base.html" %}
+{% block title %}Chat | Sklio{% endblock %}
 {% block content %}
+<section class="section">
   <div class="card chat-card">
-    <h3>Chat Room: {{ room }}</h3>
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div>
+        <h3 id="roomTitle" style="margin-bottom:4px;">Conversation</h3>
+        <p id="roomPresence" class="mk-body-sm" style="color:var(--gray-500);margin:0;">Checking availability...</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="searchMessages" placeholder="Search this chat" style="min-width:220px;" />
+        <button id="clearSearchBtn" type="button" class="btn ghost">Clear</button>
+      </div>
+    </div>
+
+    <p id="chatStatus" class="mk-body-sm" style="margin-top:12px;">Connecting...</p>
+    <div style="display:flex;justify-content:flex-end;margin:8px 0;">
+      <button id="loadOlderBtn" type="button" class="btn ghost" style="display:none;">Load older messages</button>
+    </div>
     <div id="messages" class="messages"></div>
     <div class="chat-composer">
-      <input id="msg" placeholder="Type message..." />
-      <button id="sendBtn">Send</button>
+      <button id="attachBtn" type="button" title="Attach image or PDF" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--gray-500);display:flex;align-items:center;">
+        <i data-lucide="paperclip" style="width:18px;height:18px;"></i>
+      </button>
+      <input type="file" id="attachInput" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" style="display:none;" />
+      <input id="msg" data-testid="message-input" placeholder="Type message..." />
+      <button id="sendBtn" data-testid="send-btn">Send</button>
     </div>
   </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script>
-  const ROOM = "{{ room }}";
-  const token = localStorage.getItem('sklio_access_token') || null;
+<script type="module">
+  import { initChatPage } from "/static/js/chat-page.js";
 
-  // fetch historical messages
-  async function loadHistory(){
-    const res = await fetch(`/api/chat/room/${ROOM}`);
-    if(res.ok){
-      const data = await res.json();
-      const el = document.getElementById('messages');
-      el.innerHTML = '';
-      data.forEach(m => {
-        const p = document.createElement('div');
-        p.className = 'message';
-        p.innerText = (m.sender_name ? m.sender_name + ': ' : '') + m.content;
-        el.appendChild(p);
-      });
-      el.scrollTop = el.scrollHeight;
-    }
-  }
-
-  loadHistory();
-
-  // connect socket with auth token
-  const socket = io({ auth: { token } });
-
-  socket.on('connect', () => {
-    console.log('connected', socket.id);
-    socket.emit('join', {room: ROOM});
-  });
-
-  socket.on('joined', (data) => {
-    console.log('joined', data);
-  });
-
-  socket.on('message', (data) => {
-    if(!data || data.room !== ROOM) return;
-    const el = document.getElementById('messages');
-    const p = document.createElement('div');
-    p.className = 'message';
-    p.innerText = (data.sender_name ? data.sender_name + ': ' : '') + data.content;
-    el.appendChild(p);
-    el.scrollTop = el.scrollHeight;
-  });
-
-  document.getElementById('sendBtn').addEventListener('click', sendMsg);
-  function sendMsg(){
-    const txt = document.getElementById('msg').value;
-    if(!txt) return;
-    // include token also in payload for safety (server tries token in payload first)
-    socket.emit('message', {room: ROOM, message: txt, token});
-    document.getElementById('msg').value = '';
-  }
+  initChatPage({ room: {{ room|tojson }} });
 </script>
 {% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found | Sklio{% endblock %}
+
+{% block content %}
+<section class="dashboard-shell" style="min-height: 60vh; display: flex; align-items: center; justify-content: center; text-align: center;">
+  <div class="card mk-card" style="padding: 48px; max-width: 480px; margin: 0 auto;">
+    <h1 style="font-size: 4rem; color: var(--brand-500); margin-bottom: 16px;">404</h1>
+    <h2 class="mk-heading">We couldn't find that page</h2>
+    <p class="mk-body-md muted" style="margin-bottom: 32px;">The page you're looking for might have been removed, had its name changed, or is temporarily unavailable.</p>
+    <a href="/home" class="btn primary">Go back home</a>
+  </div>
+</section>
+{% endblock %}

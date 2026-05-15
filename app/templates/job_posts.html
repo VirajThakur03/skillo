@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Job Board | Sklio{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <div class="card mk-card">
+      <div class="badge-row">
+        <span class="chip">Marketplace</span>
+        <span class="chip success">Live Jobs</span>
+      </div>
+      <h2 class="mk-display-md" style="margin-top:16px;">Job Board</h2>
+      <p class="mk-body-sm">Browse public jobs and find your next client.</p>
+
+      <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <input id="jobSearch" type="search" placeholder="Search by title or description" style="min-width:220px;flex:1 1 220px;">
+        <div id="jobFilters" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn ghost active" type="button">All Jobs</button>
+        </div>
+      </div>
+
+      <div id="jobBoardList" style="margin-top:24px;" class="grid">
+        <div class="mk-card mk-empty-state" style="padding: 40px; text-align: center; border-style: dashed;">
+          <i data-lucide="loader" class="animate-spin" style="width:48px;height:48px;color:var(--brand-500);margin-bottom:16px;"></i>
+          <p class="mk-body-sm" style="color: var(--gray-500);">Loading available jobs...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+const jobBoardList = document.getElementById("jobBoardList");
+
+async function fetchJobs() {
+    try {
+        const res = await fetch("/api/jobs");
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            jobBoardList.innerHTML = `<div class="mk-card" style="text-align:center;padding:40px;"><p class="mk-body-sm" style="color:var(--danger-600);">${data.error || "Failed to load job board."}</p></div>`;
+            return;
+        }
+        const jobs = await res.json();
+        renderJobs(Array.isArray(jobs) ? jobs : []);
+    } catch (err) {
+        jobBoardList.innerHTML = `<div class="mk-card" style="text-align:center;padding:40px;"><p class="mk-body-sm" style="color:var(--danger-600);">Connection error. Please try again.</p></div>`;
+    }
+}
+
+function renderJobs(jobs) {
+    if (!jobs || jobs.length === 0) {
+        jobBoardList.innerHTML = `
+            <div class="mk-card mk-empty-state" style="padding: 40px; text-align: center; border-style: dashed; max-width: 100%;">
+                <i data-lucide="info" style="width:48px;height:48px;color:var(--gray-300);margin-bottom:16px;"></i>
+                <p class="mk-body-sm" style="color: var(--gray-500);">No open jobs available right now. Check back soon!</p>
+            </div>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+        return;
+    }
+
+    jobBoardList.innerHTML = jobs.map(job => `
+        <div class="mk-card mk-stagger-child" style="padding: 20px;">
+            <h3 class="mk-heading">${escapeHtml(job.title)}</h3>
+            <p class="mk-body-sm muted" style="margin-bottom:12px;">${escapeHtml(job.description || "No description provided.")}</p>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:auto;">
+                <div class="badge-row">
+                    <span class="chip" style="background:var(--success-50); color:var(--success-600);">
+                        ${job.budget_min || job.budget_max ? 'Budget: ' + (job.budget_min || '0') + '-' + (job.budget_max || 'Any') : 'Flexible Budget'} ${job.currency}
+                    </span>
+                    <span class="chip">
+                        <i data-lucide="map-pin" style="width:14px;height:14px;"></i>
+                        ${escapeHtml(job.location || "Remote")}
+                    </span>
+                </div>
+                <a href="/jobs/${job.id}" class="btn primary">View & Apply</a>
+            </div>
+        </div>
+    `).join("");
+    
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+fetchJobs();
+</script>
+{% endblock %}

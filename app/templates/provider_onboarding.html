@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Become a Provider | Sklio{% endblock %}
+{% block content %}
+<section class="section" style="padding-bottom:0;">
+  <div class="mk-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <span class="mk-label">Step 2 of 7 — ID Verification</span>
+      <span class="mk-label">29%</span>
+    </div>
+    <div class="mk-kyc-progress-bar">
+      <div class="mk-kyc-progress-fill" style="transform:scaleX(0.29);"></div>
+    </div>
+  </div>
+</section>
+<section class="page-hero">
+  <div class="card page-hero-card policy-shell">
+    <div>
+      <p class="eyebrow">Provider Onboarding</p>
+      <h1>From signup to first accepted job with verification, payouts, and availability built in.</h1>
+      <p class="muted hero-copy">
+        The provider path is designed to protect the marketplace first, then help reliable professionals reach live status quickly and understand how to earn.
+      </p>
+    </div>
+    <div class="policy-nav">
+      <a class="btn primary small" href="{{ url_for('front.demo_login') }}?mode=register&role=provider">Create provider account</a>
+      <a class="btn ghost small" href="{{ url_for('front.demo_login') }}?mode=login&role=provider">Provider login</a>
+      <a class="btn ghost small" href="{{ url_for('front.provider_verification') }}">Open verification</a>
+      <a class="btn ghost small" href="{{ url_for('front.provider_kyc_status_page') }}">KYC center</a>
+    </div>
+  </div>
+</section>
+
+<section class="policy-grid">
+  <article class="feature-card">
+    <p class="eyebrow">Live Definition</p>
+    <h2>When is a provider live?</h2>
+    <p class="muted">A provider becomes live once identity, bank setup, availability, and provider agreement acceptance are complete.</p>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Activation Milestone</p>
+    <h2>What counts as activated?</h2>
+    <p class="muted">A provider is activated when the first job is accepted within 14 days of going live.</p>
+  </article>
+  <article class="feature-card">
+    <p class="eyebrow">Soft Launch</p>
+    <h2>Searchable before bookable.</h2>
+    <p class="muted">Profiles can be visible before they are bookable, but only fully verified providers should enter live booking and payout states.</p>
+  </article>
+</section>
+
+<section class="card landing-section">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Screen Flow</p>
+      <h2>Recommended provider journey</h2>
+    </div>
+  </div>
+  <ol class="step-list">
+    <li class="step-item"><strong>Role choice and secure login.</strong><span class="muted">Start with mobile OTP and route into the provider lane immediately.</span></li>
+    <li class="step-item"><strong>Profile setup.</strong><span class="muted">Capture categories, experience, languages, photos, and service areas before discovery begins.</span></li>
+    <li class="step-item"><strong>Identity verification.</strong><span class="muted">Collect PAN, one government ID with DOB, selfie, and liveness before any live booking eligibility.</span></li>
+    <li class="step-item"><strong>Skill verification.</strong><span class="muted">Require licenses or certificates where categories carry higher trust or safety risk.</span></li>
+    <li class="step-item"><strong>Bank setup and payout readiness.</strong><span class="muted">Complete payout information before the provider can go live.</span></li>
+    <li class="step-item"><strong>Availability and pricing.</strong><span class="muted">Publish real weekly hours, blackout dates, and base pricing so search and booking use accurate signals.</span></li>
+    <li class="step-item"><strong>Go live and first-job coaching.</strong><span class="muted">Providers should immediately see quotes, alerts, dashboard coaching, and the next action needed to win the first booking.</span></li>
+  </ol>
+</section>
+
+<section class="feature-grid">
+  <article class="feature-card">
+    <h3>Required documents</h3>
+    <p class="muted">PAN, one government ID with DOB, selfie or liveness, bank verification, and category-specific certification where required.</p>
+  </article>
+  <article class="feature-card">
+    <h3>Earnings framing</h3>
+    <p class="muted">Use a simple calculator during onboarding so providers understand potential gross income before they finish verification.</p>
+  </article>
+  <article class="feature-card">
+    <h3>Drop-off mitigation</h3>
+    <p class="muted">ID verification, skill proof, and bank setup are the most likely drop-off points, so each needs explanation, save-and-return, and recovery support.</p>
+  </article>
+</section>
+{% endblock %}

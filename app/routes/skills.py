@@ -1,22 +1,39 @@
 # app/routes/skills.py
 from flask import Blueprint, request, jsonify
 from ..extensions import db
-from ..models import Skill, User
+from ..models import Skill, User, KycStatus, RoleEnum, FavoriteProvider
+from ..services.provider_metrics import (
+    batch_provider_acceptance_counts,
+    metrics_for_kyc_approved_provider,
+)
+from ..utils import haversine
 from decimal import Decimal
 from math import radians, sin, cos, sqrt, atan2
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
 
 skills_bp = Blueprint("skills", __name__)
 
 @skills_bp.route("", methods=["GET"])
 def list_skills():
+    verify_jwt_in_request(optional=True)
+    viewer_uid = get_jwt_identity()
+    viewer = db.session.get(User, int(viewer_uid)) if viewer_uid is not None else None
+
     # simple search: q (title), location, price_min, price_max
     q = request.args.get("q", "")
     location = request.args.get("location")
     price_min = request.args.get("price_min", type=float)
     price_max = request.args.get("price_max", type=float)
 
-    query = Skill.query.filter(Skill.is_active == True)
+    query = (
+        Skill.query
+        .join(User, Skill.provider_id == User.id)
+        .filter(
+            Skill.is_active == True,
+            User.kyc_status == KycStatus.approved,
+            User.is_accepting_bookings == True
+        )
+    )
 
     if q:
         query = query.filter(Skill.title.ilike(f"%{q}%") | Skill.description.ilike(f"%{q}%"))
@@ -28,8 +45,28 @@ def list_skills():
         query = query.filter(Skill.price <= Decimal(price_max))
 
     skills = query.limit(100).all()
+    stats = batch_provider_acceptance_counts(
+        list({s.provider.id for s in skills if s.provider})
+    )
+    saved_ids = set()
+    if viewer and viewer.role == RoleEnum.SEEKER:
+        pids = list({s.provider.id for s in skills if s.provider})
+        if pids:
+            saved_ids = {
+                r.provider_id
+                for r in FavoriteProvider.query.filter(
+                    FavoriteProvider.seeker_id == viewer.id,
+                    FavoriteProvider.provider_id.in_(pids),
+                ).all()
+            }
+
     result = []
     for s in skills:
+        p = s.provider
+        rl, ar = metrics_for_kyc_approved_provider(p, stats)
+        is_saved = None
+        if viewer and viewer.role == RoleEnum.SEEKER:
+            is_saved = p.id in saved_ids
         result.append({
             "id": s.id,
             "title": s.title,
@@ -37,9 +74,12 @@ def list_skills():
             "price": float(s.price),
             "currency": s.currency,
             "provider": {
-                "id": s.provider.id,
-                "name": s.provider.name,
-                "rating": s.provider.rating,
+                "id": p.id,
+                "name": p.name,
+                "rating": p.rating,
+                "response_label": rl,
+                "acceptance_rate": ar,
+                "is_saved": is_saved,
             },
             "location": s.location
         })
@@ -49,7 +89,7 @@ def list_skills():
 @jwt_required()
 def create_skill():
     user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
 
     if not user:
         return {"error": "unauthenticated"}, 401
@@ -61,6 +101,8 @@ def create_skill():
     # NEW: require verification
     if not user.is_verified:
         return {"error": "provider not verified. Upload ID and wait for verification."}, 403
+    if user.kyc_status != KycStatus.approved:
+        return {"error": "provider kyc not approved. Complete review before publishing skills."}, 403
 
     data = request.get_json() or {}
     title = data.get("title")
@@ -105,18 +147,39 @@ def skill_providers():
     skill = Skill.query.get_or_404(skill_id)
 
     seeker = None
-    if get_jwt_identity():
-        seeker = User.query.get(get_jwt_identity())
+    uid = get_jwt_identity()
+    if uid is not None:
+        seeker = db.session.get(User, int(uid))
 
-    providers = Skill.query.filter_by(
-        title=skill.title,
-        is_active=True
+    providers = Skill.query.join(User, Skill.provider_id == User.id).filter(
+        Skill.title == skill.title,
+        Skill.is_active == True,
+        User.is_accepting_bookings == True
     ).all()
+
+    approved_provider_ids = [
+        s.provider.id
+        for s in providers
+        if s.provider and s.provider.kyc_status == KycStatus.approved
+    ]
+    stats = batch_provider_acceptance_counts(list(set(approved_provider_ids)))
+
+    saved_ids = set()
+    if seeker and seeker.role == RoleEnum.SEEKER and approved_provider_ids:
+        saved_ids = {
+            r.provider_id
+            for r in FavoriteProvider.query.filter(
+                FavoriteProvider.seeker_id == seeker.id,
+                FavoriteProvider.provider_id.in_(list(set(approved_provider_ids))),
+            ).all()
+        }
 
     results = []
 
     for s in providers:
         provider = s.provider
+        if provider.kyc_status != KycStatus.approved:
+            continue
 
         distance = 999
         if seeker and seeker.latitude and provider.latitude:
@@ -127,13 +190,22 @@ def skill_providers():
                 provider.longitude,
             )
 
+        rl, ar = metrics_for_kyc_approved_provider(provider, stats)
+
+        is_saved = None
+        if seeker and seeker.role == RoleEnum.SEEKER:
+            is_saved = provider.id in saved_ids
+
         results.append({
             "id": provider.id,
             "name": provider.name,
             "rating": provider.rating or 0,
             "price": float(s.price),
             "distance_km": distance,
-            "skill_id": s.id
+            "skill_id": s.id,
+            "response_label": rl,
+            "acceptance_rate": ar,
+            "is_saved": is_saved,
         })
 
     if sort == "price":

@@ -1,0 +1,207 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment target"
+        required: true
+        default: production
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/sklio:${{ github.sha }}
+
+jobs:
+  fresh-postgres-migration-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: skillo_ci
+          POSTGRES_USER: skillo
+          POSTGRES_PASSWORD: skillo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skillo -d skillo_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ENV: development
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://skillo:skillo@localhost:5432/skillo_ci
+      REDIS_URL: redis://localhost:6379/0
+      SOCKETIO_MESSAGE_QUEUE: redis://localhost:6379/1
+      RATELIMIT_STORAGE_URI: redis://localhost:6379/2
+      SECRET_KEY: ci-secret-key
+      JWT_SECRET_KEY: ci-jwt-secret-key
+      PAYMENT_PROVIDER: mock
+      PAYMENT_MODE: mock
+      ALLOW_MOCK_PAYMENTS: true
+      RUNNING_IN_DOCKER: ""
+      AUTO_SYNC_SCHEMA: "false"
+      RUN_MIGRATIONS_ON_START: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr poppler-utils libgl1
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run fresh database migration check
+        run: |
+          python -m flask db upgrade
+          python scripts/verify_schema.py
+
+  test:
+    needs: fresh-postgres-migration-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr poppler-utils libgl1
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Install Playwright deps
+        run: |
+          npm install
+      - name: Run stable regression suite
+        run: |
+          python scripts/smoke_pages.py
+          python scripts/smoke_verify.py
+          python scripts/smoke_realtime_verify.py
+          python scripts/smoke_chat_experience.py
+          pytest tests/test_auth_flow.py tests/test_dashboard_flows.py tests/test_dashboard_experience.py tests/test_chat_experience.py tests/test_job_post_flow.py tests/test_notifications_flow.py tests/test_stripe_payment_flow.py tests/test_system_features.py -q
+      - name: Run Playwright smoke checks
+        if: ${{ secrets.TEST_SEEKER_EMAIL != '' && secrets.TEST_SEEKER_PASSWORD != '' && secrets.TEST_PROVIDER_EMAIL != '' && secrets.TEST_PROVIDER_PASSWORD != '' }}
+        env:
+          TEST_SEEKER_EMAIL: ${{ secrets.TEST_SEEKER_EMAIL }}
+          TEST_SEEKER_PASSWORD: ${{ secrets.TEST_SEEKER_PASSWORD }}
+          TEST_PROVIDER_EMAIL: ${{ secrets.TEST_PROVIDER_EMAIL }}
+          TEST_PROVIDER_PASSWORD: ${{ secrets.TEST_PROVIDER_PASSWORD }}
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}
+            ghcr.io/${{ github.repository }}/sklio:${{ github.ref_name }}
+
+  deploy-staging:
+    if: github.event_name == 'push'
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy deployment artifacts
+        run: |
+          tar czf deploy-artifacts.tgz docker-compose.prod.yml scripts/remote_blue_green_deploy.sh
+      - name: Upload artifacts to host
+        run: |
+          scp -o StrictHostKeyChecking=no deploy-artifacts.tgz "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/deploy-artifacts.tgz"
+      - name: Deploy staging
+        run: |
+          ssh -o StrictHostKeyChecking=no "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "
+            set -euo pipefail
+            mkdir -p ${{ secrets.APP_ROOT }}
+            cd ${{ secrets.APP_ROOT }}
+            tar xzf /tmp/deploy-artifacts.tgz
+            chmod +x scripts/remote_blue_green_deploy.sh
+            APP_ROOT=${{ secrets.APP_ROOT }} \
+            HEALTH_PATH=/health \
+            GHCR_USERNAME=${{ github.actor }} \
+            GHCR_TOKEN=${{ github.token }} \
+            ./scripts/remote_blue_green_deploy.sh staging '${{ env.IMAGE_NAME }}'
+          "
+      - name: Health check
+        run: curl -fsS "${{ secrets.HEALTHCHECK_URL }}/health"
+      - name: Post-deploy smoke checks
+        run: |
+          curl -fsS "${{ secrets.HEALTHCHECK_URL }}/api/system/features"
+
+  deploy-production:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy deployment artifacts
+        run: |
+          tar czf deploy-artifacts.tgz docker-compose.prod.yml scripts/remote_blue_green_deploy.sh
+      - name: Upload artifacts to host
+        run: |
+          scp -o StrictHostKeyChecking=no deploy-artifacts.tgz "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/deploy-artifacts.tgz"
+      - name: Deploy production
+        run: |
+          ssh -o StrictHostKeyChecking=no "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "
+            set -euo pipefail
+            mkdir -p ${{ secrets.APP_ROOT }}
+            cd ${{ secrets.APP_ROOT }}
+            tar xzf /tmp/deploy-artifacts.tgz
+            chmod +x scripts/remote_blue_green_deploy.sh
+            APP_ROOT=${{ secrets.APP_ROOT }} \
+            HEALTH_PATH=/health \
+            GHCR_USERNAME=${{ github.actor }} \
+            GHCR_TOKEN=${{ github.token }} \
+            ./scripts/remote_blue_green_deploy.sh production '${{ env.IMAGE_NAME }}'
+          "
+      - name: Health check
+        run: curl -fsS "${{ secrets.HEALTHCHECK_URL }}/health"
+      - name: Post-deploy smoke checks
+        run: |
+          curl -fsS "${{ secrets.HEALTHCHECK_URL }}/api/system/features"

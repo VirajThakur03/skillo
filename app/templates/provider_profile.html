@@ -1,33 +1,63 @@
 {% extends "base.html" %}
 
+{% block title %}Provider Profile | Sklio{% endblock %}
 {% block content %}
-<div class="card glass">
-  <h2>Complete Provider Profile</h2>
-  <p class="muted">This is required before accepting bookings</p>
+<section class="section">
+  <div class="card">
+    <div class="badge-row">
+      <span class="chip">Provider setup</span>
+      <span class="chip success">Secure profile</span>
+    </div>
+    <h2>Complete your provider profile</h2>
+    <p class="muted">This is required before accepting bookings.</p>
 
-  <form id="profileForm">
-    <label>Name</label>
-    <input id="name" required />
+    <form id="profileForm" class="card" style="margin-top:16px;">
+      <div class="photo-upload-group" style="text-align:center; margin-bottom: 24px;">
+        <div class="avatar-wrapper" style="position:relative; display:inline-block;">
+          <img id="profile-preview" src="/static/images/default-avatar.png" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:2px solid var(--brand-100); background: #eee; text-indent: -9999px;" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'%3E%3Cpath d=\\'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2\\'/%3E%3Ccircle cx=\\'12\\' cy=\\'7\\' r=\\'4\\'/%3E%3C/svg%3E';" />
+          <button id="uploadPhotoBtn" type="button" class="btn primary icon-only" style="position:absolute; bottom:0; right:0; border-radius:50%; width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+            <i data-lucide="camera" style="width:16px;height:16px;"></i>
+          </button>
+        </div>
+        <input type="file" id="photoInput" accept="image/png, image/jpeg, image/webp" style="display:none;" />
+        <p id="photoStatus" class="small muted" style="margin-top:8px;"></p>
+      </div>
 
-    <label>Phone</label>
-    <input id="phone" required />
+      <label class="small muted">Name</label>
+      <input id="name" required />
 
-    <label>Primary Skill</label>
-    <input id="skill" placeholder="Electrician / Plumber" required />
+      <label class="small muted" style="margin-top:12px;">Phone</label>
+      <input id="phone" required />
 
-    <label>Price per hour (₹)</label>
-    <input id="price" type="number" min="1" required />
+      <label class="small muted" style="margin-top:12px;">Primary skill</label>
+      <input id="skill" placeholder="Electrician / Plumber" required />
 
-    <label>Location</label>
-    <input id="location" placeholder="Mumbai, Pune…" required />
+      <label class="small muted" style="margin-top:12px;">Price per hour (₹)</label>
+      <input id="price" type="number" min="1" required />
 
-    <button class="btn primary" id="saveBtn">
-      Save Profile
-    </button>
-  </form>
+      <label class="small muted" style="margin-top:12px;">Location</label>
+      <input id="location" placeholder="Mumbai, Pune..." required />
 
-  <p id="status" class="muted" style="margin-top:8px;"></p>
-</div>
+      <div class="actions" style="margin-top:16px;">
+        <button class="btn primary" id="saveBtn">Save profile</button>
+        <a class="btn ghost" href="/provider/dashboard">View dashboard</a>
+      </div>
+    </form>
+
+    <div class="card" style="margin-top:16px;">
+      <h3 class="mk-heading" style="margin-bottom: 8px;">Portfolio Gallery</h3>
+      <p class="muted small" style="margin-bottom: 16px;">Upload up to 6 images of your past work. Helps Seekers trust your service.</p>
+      <div id="portfolio-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px;">
+         <div id="portfolio-upload-card" style="width: 100%; aspect-ratio: 1; border: 2px dashed var(--brand-200); border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--brand-400);">
+            <i data-lucide="plus" style="width: 24px; height: 24px;"></i>
+         </div>
+      </div>
+      <input type="file" id="portfolioInput" accept="image/png, image/jpeg, image/webp" style="display:none;" />
+    </div>
+
+    <p id="status" class="muted" style="margin-top:12px;"></p>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -38,19 +68,147 @@ const form = document.getElementById("profileForm");
 const statusEl = document.getElementById("status");
 const btn = document.getElementById("saveBtn");
 
-/* -------------------------------
-   Prefill name (nice UX)
--------------------------------- */
 document.addEventListener("DOMContentLoaded", async () => {
+  if (window.lucide) window.lucide.createIcons();
+
   const user = await getCurrentUser(true);
   if (user?.name) {
     document.getElementById("name").value = user.name;
   }
+  if (user?.profile_photo_url) {
+    document.getElementById("profile-preview").src = user.profile_photo_url.startsWith("http") ? user.profile_photo_url : `/api/system/upload?ref=${encodeURIComponent(user.profile_photo_url)}`;
+  }
+  
+  // Render existing portfolio images
+  if (user?.portfolio_images && user.portfolio_images.length > 0) {
+     user.portfolio_images.forEach((ref, idx) => addPortfolioImageToGrid(ref, idx));
+  }
+  updateUploadCardVisibility();
 });
 
-/* -------------------------------
-   Save profile
--------------------------------- */
+function updateUploadCardVisibility() {
+    const grid = document.getElementById("portfolio-grid");
+    const count = grid.querySelectorAll(".portfolio-item-card").length;
+    const card = document.getElementById("portfolio-upload-card");
+    if (count >= 6) {
+        card.style.display = "none";
+    } else {
+        card.style.display = "flex";
+    }
+}
+
+function addPortfolioImageToGrid(ref, idx) {
+    const grid = document.getElementById("portfolio-grid");
+    const uploadCard = document.getElementById("portfolio-upload-card");
+    const wrapper = document.createElement("div");
+    wrapper.className = "portfolio-item-card";
+    wrapper.style.cssText = "width: 100%; aspect-ratio: 1; position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--brand-100);";
+    
+    const img = document.createElement("img");
+    img.src = ref.startsWith("http") ? ref : `/api/system/upload?ref=${encodeURIComponent(ref)}`;
+    img.style.cssText = "width: 100%; height: 100%; object-fit: cover; display: block;";
+    
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn icon-only";
+    delBtn.style.cssText = "position: absolute; top: 4px; right: 4px; border-radius: 50%; background: rgba(255,255,255,0.8); width: 24px; height: 24px; padding: 0; min-height: unset; color: red;";
+    delBtn.innerHTML = "<i data-lucide='trash-2' style='width:12px;height:12px;'></i>";
+    
+    delBtn.onclick = async () => {
+        delBtn.disabled = true;
+        delBtn.innerHTML = "<i data-lucide='loader' class='spin' style='width:12px;height:12px;'></i>";
+        if (window.lucide) window.lucide.createIcons();
+        const res = await authFetch(`/api/account/portfolio/${idx}`, { method: "DELETE" });
+        if (res.ok) {
+            wrapper.remove();
+            updateUploadCardVisibility();
+        } else {
+            delBtn.disabled = false;
+            delBtn.innerHTML = "<i data-lucide='trash-2' style='width:12px;height:12px;'></i>";
+            if (window.lucide) window.lucide.createIcons();
+            alert(res.data?.error || "Failed to delete");
+        }
+    };
+    
+    wrapper.appendChild(img);
+    wrapper.appendChild(delBtn);
+    grid.insertBefore(wrapper, uploadCard);
+    updateUploadCardVisibility();
+    if (window.lucide) window.lucide.createIcons();
+}
+
+const portfolioUploadBtn = document.getElementById("portfolio-upload-card");
+const portfolioInput = document.getElementById("portfolioInput");
+
+portfolioUploadBtn.addEventListener("click", () => portfolioInput.click());
+
+portfolioInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const fd = new FormData();
+  fd.append("image", file);
+
+  const originalHtml = portfolioUploadBtn.innerHTML;
+  portfolioUploadBtn.innerHTML = "<i data-lucide='loader' class='spin' style='width: 24px; height: 24px;'></i>";
+  if (window.lucide) window.lucide.createIcons();
+
+  try {
+    const res = await authFetch("/api/account/portfolio", {
+      method: "POST",
+      body: fd
+    });
+    if (res.ok) {
+       addPortfolioImageToGrid(res.data.url.split("ref=")[1], res.data.index);
+    } else {
+       alert(res.data?.error || "Failed to upload");
+    }
+  } catch (err) {
+    alert("Network error");
+  }
+  portfolioUploadBtn.innerHTML = originalHtml;
+  if (window.lucide) window.lucide.createIcons();
+  portfolioInput.value = ""; // Reset input
+});
+
+const uploadPhotoBtn = document.getElementById("uploadPhotoBtn");
+const photoInput = document.getElementById("photoInput");
+const photoStatus = document.getElementById("photoStatus");
+const profilePreview = document.getElementById("profile-preview");
+
+uploadPhotoBtn.addEventListener("click", () => photoInput.click());
+
+photoInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const fd = new FormData();
+  fd.append("photo", file);
+
+  photoStatus.innerText = "Uploading...";
+  const btnOriginalContent = uploadPhotoBtn.innerHTML;
+  uploadPhotoBtn.innerHTML = "<i data-lucide='loader' class='spin' style='width:16px;height:16px;'></i>";
+  if (window.lucide) window.lucide.createIcons();
+
+  try {
+    const res = await authFetch("/api/account/photo", {
+      method: "POST",
+      body: fd // Do not set Content-Type header; let browser set it with boundary
+    });
+    if (res.ok) {
+      photoStatus.innerText = "Photo updated";
+      profilePreview.src = res.data.url;
+      setTimeout(() => { photoStatus.innerText = ""; }, 3000);
+    } else {
+      photoStatus.innerText = res.data?.error || "Upload failed";
+    }
+  } catch (err) {
+    photoStatus.innerText = "Network error";
+  }
+  uploadPhotoBtn.innerHTML = btnOriginalContent;
+  if (window.lucide) window.lucide.createIcons();
+});
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -70,19 +228,18 @@ form.addEventListener("submit", async (e) => {
     location: document.getElementById("location").value.trim()
   };
 
-  // ✅ Frontend validation (IMPORTANT)
   if (!payload.phone || !payload.skill || !payload.location || !payload.price) {
     statusEl.innerText = "All fields are required";
     return;
   }
 
   btn.disabled = true;
-  statusEl.innerText = "Saving profile…";
+  statusEl.innerText = "Saving profile...";
 
   const res = await authFetch("/api/provider/profile", {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"   // ✅ FIXED
+      "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
   });
@@ -93,10 +250,23 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  statusEl.innerText = "Profile saved ✔ Redirecting…";
+  statusEl.innerText = "Profile saved. Starting verification...";
+
+  const refreshed = await getCurrentUser(true);
+  const status = refreshed?.verification_status;
+  const needsSelfie = refreshed?.requires_selfie === true;
+
+  let nextPath = "/provider_verification";
+  if (status === "document_verified" && needsSelfie) {
+    nextPath = "/provider_verification_selfie";
+  } else if (status === "document_verified" && !needsSelfie) {
+    nextPath = "/provider_verification_video";
+  } else if (status === "face_verified") {
+    nextPath = "/confirm_location";
+  }
 
   setTimeout(() => {
-    window.location.replace("/provider/dashboard");
+    window.location.replace(nextPath);
   }, 700);
 });
 </script>

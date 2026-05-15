@@ -1,0 +1,514 @@
+{% extends "base.html" %}
+
+{% block title %}Availability Schedule | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Availability Calendar</p>
+        <h1>Keep your weekly schedule accurate so seekers only see slots you can actually take.</h1>
+        <p class="muted">Turn days on or off, set your working hours, and block specific dates when you are unavailable.</p>
+      </div>
+      <div class="mk-inline-stack">
+        <span class="status-pill status-confirmed" id="availabilitySaveState">Saved</span>
+        <button class="btn ghost" id="copyMondayBtn" type="button" style="display:none;">Copy Monday to all</button>
+        <button class="btn primary" id="saveAvailabilityBtn" type="button">Save schedule</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Weekly Grid</p>
+        <h2>Working hours</h2>
+        <p class="muted">Inactive days show as off. Active days are visible to seekers in search and booking.</p>
+      </div>
+    </div>
+
+    <div class="search-panel">
+      <label for="availabilityTimezone">Timezone</label>
+      <input id="availabilityTimezone" value="UTC" autocomplete="off">
+    </div>
+
+    <div id="availabilityError" class="mk-inline-message" hidden></div>
+    <div id="availabilityGrid" class="mk-availability-grid"></div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Instant Book</p>
+        <h2>Booking behavior</h2>
+      </div>
+      <button class="btn ghost" id="saveInstantBookBtn" type="button">Save instant book</button>
+    </div>
+
+    <div class="dashboard-metrics">
+      <label class="metric-card">
+        <span class="muted">Instant book enabled</span>
+        <input id="instantBookEnabled" type="checkbox">
+      </label>
+      <label class="metric-card">
+        <span class="muted">Slot duration (min)</span>
+        <input id="slotDuration" type="number" min="30" step="30" value="60">
+      </label>
+      <label class="metric-card">
+        <span class="muted">Hold minutes</span>
+        <input id="slotHold" type="number" min="0" step="1" value="5">
+      </label>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Blackout Dates</p>
+        <h2>Dates you are unavailable</h2>
+        <p class="muted">Block full dates for travel, personal time, or emergencies.</p>
+      </div>
+      <button class="btn ghost" id="createBlackoutBtn" type="button">Add blackout</button>
+    </div>
+
+    <div class="search-panel">
+      <label for="blackoutDate">Date</label>
+      <input id="blackoutDate" type="date">
+      <label for="blackoutReason">Reason</label>
+      <input id="blackoutReason" placeholder="Vacation, training, emergency">
+    </div>
+
+    <div id="blackoutError" class="mk-inline-message" hidden></div>
+    <div id="blackoutList" class="job-list"></div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, useFeature, showMkToast } from "/static/js/main.js";
+
+const dayLabels = [
+  ["Monday", 0],
+  ["Tuesday", 1],
+  ["Wednesday", 2],
+  ["Thursday", 3],
+  ["Friday", 4],
+  ["Saturday", 5],
+  ["Sunday", 6],
+];
+
+const hourOptions = [];
+for (let minutes = 0; minutes <= 24 * 60; minutes += 60) {
+  const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
+  hourOptions.push(`${hours}:00`);
+}
+
+const state = {
+  settings: null,
+  saveTimer: null,
+  isSaving: false,
+};
+
+function minutesToTime(total) {
+  const safeTotal = Number.isFinite(total) ? total : 9 * 60;
+  const hours = String(Math.floor(safeTotal / 60)).padStart(2, "0");
+  const minutes = String(safeTotal % 60).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function timeToMinutes(value) {
+  const [hours, minutes] = String(value || "09:00").split(":").map(Number);
+  return (hours * 60) + minutes;
+}
+
+function formatDateLabel(value) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+function setInlineMessage(id, message = "", tone = "error") {
+  const node = document.getElementById(id);
+  node.hidden = !message;
+  node.textContent = message;
+  node.dataset.tone = tone;
+}
+
+function setSaveState(label, tone = "confirmed") {
+  const node = document.getElementById("availabilitySaveState");
+  node.textContent = label;
+  node.className = tone === "warning" ? "status-pill status-pending" : "status-pill status-confirmed";
+}
+
+function timeSelect(markupValue, attributeName, weekday) {
+  return `
+    <select data-${attributeName}="${weekday}">
+      ${hourOptions.map((value) => `<option value="${value}" ${value === markupValue ? "selected" : ""}>${value}</option>`).join("")}
+    </select>
+  `;
+}
+
+function buildDayCards(rules) {
+  return dayLabels.map(([label, weekday]) => {
+    const rule = rules.find((item) => item.day_of_week === weekday || item.weekday === weekday);
+    const enabled = rule ? rule.is_active !== false && rule.enabled !== false : false;
+    const startValue = minutesToTime(rule?.start_minute_local ?? 9 * 60);
+    const endValue = minutesToTime(rule?.end_minute_local ?? 18 * 60);
+    return `
+      <article class="mk-card mk-availability-day ${enabled ? "is-active" : "is-off"}" data-day-card="${weekday}">
+        <div class="job-header">
+          <div>
+            <h3>${label}</h3>
+            <p class="muted">${enabled ? "Accepting bookings" : "Off"}</p>
+          </div>
+          <label class="status-pill ${enabled ? "status-confirmed" : "status-pending"}">
+            <input type="checkbox" data-enabled="${weekday}" ${enabled ? "checked" : ""}>
+            <span>${enabled ? "On" : "Off"}</span>
+          </label>
+        </div>
+        <div class="job-meta mk-availability-controls">
+          <label>
+            <span>Start</span>
+            ${timeSelect(startValue, "start", weekday)}
+          </label>
+          <label>
+            <span>End</span>
+            ${timeSelect(endValue, "end", weekday)}
+          </label>
+        </div>
+        <div class="mk-availability-visual-track" style="height: 6px; background: #eee; border-radius: 3px; margin-top: 16px; position: relative; overflow: hidden;">
+           <div class="mk-availability-progress" data-track-for="${weekday}" style="position: absolute; height: 100%; background: var(--brand-500); left: 0; width: 0; transition: all 0.3s ease;"></div>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderGrid(settings) {
+  const container = document.getElementById("availabilityGrid");
+  container.innerHTML = buildDayCards(settings.rules || []);
+
+  container.querySelectorAll("[data-enabled], [data-start], [data-end]").forEach((field) => {
+    field.addEventListener("change", () => {
+      syncVisualTrack(field.closest("[data-day-card]"));
+      const card = field.closest("[data-day-card]");
+      const weekday = card.dataset.dayCard;
+      const enabled = card.querySelector(`[data-enabled="${weekday}"]`).checked;
+      card.classList.toggle("is-active", enabled);
+      card.classList.toggle("is-off", !enabled);
+      card.querySelector(".status-pill span").textContent = enabled ? "On" : "Off";
+      card.querySelector(".status-pill").className = enabled ? "status-pill status-confirmed" : "status-pill status-pending";
+      card.querySelector(".muted").textContent = enabled ? "Accepting bookings" : "Off";
+      setSaveState("Unsaved changes", "warning");
+      queueAutoSave();
+    });
+  });
+  
+  // Initial sync for all tracks
+  container.querySelectorAll("[data-day-card]").forEach(syncVisualTrack);
+  document.getElementById("copyMondayBtn").style.display = "inline-flex";
+}
+
+function syncVisualTrack(card) {
+    const weekday = card.dataset.dayCard;
+    const enabled = card.querySelector(`[data-enabled="${weekday}"]`).checked;
+    const startVal = card.querySelector(`[data-start="${weekday}"]`).value;
+    const endVal = card.querySelector(`[data-end="${weekday}"]`).value;
+    const track = card.querySelector(".mk-availability-progress");
+    
+    if (!enabled) {
+        track.style.width = "0";
+        return;
+    }
+    
+    const startMin = timeToMinutes(startVal);
+    const endMin = timeToMinutes(endVal);
+    const totalMinutes = 24 * 60;
+    
+    track.style.left = ((startMin / totalMinutes) * 100) + "%";
+    track.style.width = (((endMin - startMin) / totalMinutes) * 100) + "%";
+}
+
+function renderBlackouts(settings) {
+  const list = document.getElementById("blackoutList");
+  const items = settings.blackouts || [];
+  if (!items.length) {
+    list.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">No blackout dates yet.</p></div>`;
+    return;
+  }
+
+  list.innerHTML = items.map((item) => `
+    <article class="job-item mk-card mk-card-booking mk-booking-accent" data-state="pending">
+      <div class="job-header">
+        <div>
+          <h3>${formatDateLabel(item.date)}</h3>
+          <p class="muted">${item.reason || "Unavailable"}</p>
+        </div>
+        <button class="btn ghost small" type="button" data-delete-blackout="${item.id}">Remove</button>
+      </div>
+    </article>
+  `).join("");
+
+  list.querySelectorAll("[data-delete-blackout]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      setInlineMessage("blackoutError");
+      const response = await authFetch(`/api/availability/provider/availability/blackouts/${button.dataset.deleteBlackout}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        setInlineMessage("blackoutError", response.data?.error || "Unable to remove blackout.");
+        return;
+      }
+      await loadSettings();
+    });
+  });
+}
+
+function collectRulesPayload() {
+  return dayLabels.map(([, weekday]) => ({
+    day_of_week: weekday,
+    start_time: document.querySelector(`[data-start="${weekday}"]`).value,
+    end_time: document.querySelector(`[data-end="${weekday}"]`).value,
+    is_active: document.querySelector(`[data-enabled="${weekday}"]`).checked,
+    min_notice_minutes: 60,
+  }));
+}
+
+async function saveRules() {
+  if (state.isSaving) return;
+  state.isSaving = true;
+  setSaveState("Saving...", "warning");
+  setInlineMessage("availabilityError");
+
+  const response = await authFetch("/api/availability/provider/availability/rules", {
+    method: "PUT",
+    body: JSON.stringify({
+      timezone: document.getElementById("availabilityTimezone").value,
+      rules: collectRulesPayload(),
+    }),
+  });
+
+  state.isSaving = false;
+  if (!response.ok) {
+    setSaveState("Save failed", "warning");
+    setInlineMessage("availabilityError", response.data?.error || "Unable to save weekly availability.");
+    return false;
+  }
+
+  setSaveState("Saved");
+  showMkToast("Schedule saved ✓", "success");
+  return true;
+}
+
+function queueAutoSave() {
+  clearTimeout(state.saveTimer);
+  state.saveTimer = setTimeout(() => {
+    saveRules();
+  }, 900);
+}
+
+async function loadSettings() {
+  const container = document.getElementById("availabilityGrid");
+  container.innerHTML = `
+    <div class="mk-loading-stack">
+      <div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div>
+      <div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div>
+      <div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div>
+    </div>
+  `;
+
+  const response = await authFetch("/api/availability/provider/availability");
+  if (!response.ok) {
+    container.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">${response.data?.error || "Unable to load availability."}</p></div>`;
+    document.getElementById("saveAvailabilityBtn").disabled = true;
+    document.getElementById("saveInstantBookBtn").disabled = true;
+    document.getElementById("createBlackoutBtn").disabled = true;
+    setSaveState("Unavailable", "warning");
+    return;
+  }
+
+  state.settings = response.data;
+  document.getElementById("availabilityTimezone").value = response.data.timezone || "UTC";
+  document.getElementById("instantBookEnabled").checked = Boolean(response.data.instant_book?.instant_book_enabled);
+  document.getElementById("slotDuration").value = response.data.instant_book?.slot_duration_minutes || 60;
+  document.getElementById("slotHold").value = response.data.instant_book?.slot_hold_minutes || 5;
+  renderGrid(response.data);
+  renderBlackouts(response.data);
+  setSaveState("Saved");
+}
+
+document.getElementById("saveAvailabilityBtn").addEventListener("click", async () => {
+  await saveRules();
+});
+
+document.getElementById("availabilityTimezone").addEventListener("change", () => {
+  setSaveState("Unsaved changes", "warning");
+  queueAutoSave();
+});
+
+document.getElementById("copyMondayBtn").addEventListener("click", () => {
+    const monday = document.querySelector('[data-day-card="0"]');
+    if (!monday) return;
+    
+    const enabled = monday.querySelector('[data-enabled="0"]').checked;
+    const start = monday.querySelector('[data-start="0"]').value;
+    const end = monday.querySelector('[data-end="0"]').value;
+    
+    for (let i = 1; i <= 6; i++) {
+        const card = document.querySelector(`[data-day-card="${i}"]`);
+        if (!card) continue;
+        card.querySelector(`[data-enabled="${i}"]`).checked = enabled;
+        card.querySelector(`[data-start="${i}"]`).value = start;
+        card.querySelector(`[data-end="${i}"]`).value = end;
+        
+        // Trigger change effects
+        card.classList.toggle("is-active", enabled);
+        card.classList.toggle("is-off", !enabled);
+        card.querySelector(".status-pill span").textContent = enabled ? "On" : "Off";
+        card.querySelector(".status-pill").className = enabled ? "status-pill status-confirmed" : "status-pill status-pending";
+        card.querySelector(".muted").textContent = enabled ? "Accepting bookings" : "Off";
+        syncVisualTrack(card);
+    }
+    
+    setSaveState("Unsaved changes", "warning");
+    queueAutoSave();
+});
+
+document.getElementById("saveInstantBookBtn").addEventListener("click", async () => {
+  const response = await authFetch("/api/availability/provider/instant-book", {
+    method: "PUT",
+    body: JSON.stringify({
+      instant_book_enabled: document.getElementById("instantBookEnabled").checked,
+      slot_duration_minutes: Number(document.getElementById("slotDuration").value || 60),
+      slot_hold_minutes: Number(document.getElementById("slotHold").value || 5),
+    }),
+  });
+  if (!response.ok) {
+    setInlineMessage("availabilityError", response.data?.error || "Unable to save instant book settings.");
+    return;
+  }
+  await loadSettings();
+});
+
+document.getElementById("createBlackoutBtn").addEventListener("click", async () => {
+  setInlineMessage("blackoutError");
+  const blackoutDate = document.getElementById("blackoutDate").value;
+  if (!blackoutDate) {
+    setInlineMessage("blackoutError", "Choose a date before adding a blackout.");
+    return;
+  }
+
+  const response = await authFetch("/api/availability/provider/availability/blackouts", {
+    method: "POST",
+    body: JSON.stringify({
+      date: blackoutDate,
+      reason: document.getElementById("blackoutReason").value || "",
+      reason_code: "OTHER",
+    }),
+  });
+  if (!response.ok) {
+    setInlineMessage("blackoutError", response.data?.error || "Unable to add blackout.");
+    return;
+  }
+
+  document.getElementById("blackoutDate").value = "";
+  document.getElementById("blackoutReason").value = "";
+  await loadSettings();
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const enabled = await useFeature("weekly_availability");
+  if (!enabled) {
+    document.getElementById("availabilityGrid").innerHTML = `
+      <div class="mk-card mk-empty-state">
+        <h3 class="mk-heading">Availability scheduler hidden</h3>
+        <p class="mk-body-sm">Weekly availability is disabled in this environment.</p>
+      </div>
+    `;
+    document.getElementById("saveAvailabilityBtn").disabled = true;
+    document.getElementById("saveInstantBookBtn").disabled = true;
+    document.getElementById("createBlackoutBtn").disabled = true;
+    setSaveState("Disabled", "warning");
+    return;
+  }
+  loadSettings();
+});
+</script>
+
+<style>
+.mk-inline-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mk-inline-message {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 0.95rem;
+}
+
+.mk-inline-message[data-tone="error"] {
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+}
+
+.mk-availability-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mk-availability-day {
+  min-height: 190px;
+  padding: 18px;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.mk-availability-day.is-active {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.08);
+}
+
+.mk-availability-day.is-off {
+  opacity: 0.78;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.mk-availability-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.mk-availability-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.mk-availability-controls select {
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .mk-availability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .mk-inline-stack {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .mk-availability-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock %}

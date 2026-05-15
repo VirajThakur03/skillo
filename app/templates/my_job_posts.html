@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}My Job Posts | Sklio{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <div class="card mk-card">
+      <div class="badge-row">
+        <span class="chip">Seeker dashboard</span>
+        <span class="chip success">Job Posts</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-top: 16px;">
+          <h2 class="mk-display-md">My job posts</h2>
+          <button id="newJobBtn" class="btn primary">
+            <i data-lucide="plus-circle" style="width:18px;height:18px;"></i>
+            Post a new job
+          </button>
+      </div>
+      <p class="mk-body-sm">Manage your public job listings and review provider proposals.</p>
+
+      <div id="jobList" style="margin-top:24px;" class="grid">
+        <div class="mk-card mk-empty-state" style="padding: 40px; text-align: center; border-style: dashed;">
+          <i data-lucide="briefcase" style="width:48px;height:48px;color:var(--gray-300);margin-bottom:16px;"></i>
+          <p class="mk-body-sm" style="color: var(--gray-500);">Loading your job posts...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Create Job Modal -->
+<div id="jobModal" class="modal" style="display:none;">
+    <div class="modal-content mk-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 class="mk-heading">Post a new job</h3>
+            <button class="btn ghost close-modal">&times;</button>
+        </div>
+        <form id="jobForm" style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+            <div class="form-group">
+                <label class="mk-label-upper" for="jobTitle">Job Title</label>
+                <input type="text" id="jobTitle" class="form-control" placeholder="e.g. Electrical wiring for 2BHK" required>
+            </div>
+            <div class="form-group">
+                <label class="mk-label-upper" for="jobDescription">Description</label>
+                <textarea id="jobDescription" class="form-control" rows="4" placeholder="Describe what you need help with..."></textarea>
+            </div>
+            <div style="display:flex; gap:12px;">
+                <div class="form-group" style="flex:1;">
+                    <label class="mk-label-upper" for="budgetMin">Min Budget (INR)</label>
+                    <input type="number" id="budgetMin" class="form-control" placeholder="500">
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label class="mk-label-upper" for="budgetMax">Max Budget (INR)</label>
+                    <input type="number" id="budgetMax" class="form-control" placeholder="2000">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="mk-label-upper" for="locationText">Location</label>
+                <input type="text" id="locationText" class="form-control" placeholder="e.g. Indiranagar, Bangalore">
+            </div>
+            <div id="formMessage" style="display:none;"></div>
+            <button type="submit" class="btn primary" id="submitJobBtn" style="margin-top:8px;">Post Job</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/job-posts-page.js"></script>
+{% endblock %}

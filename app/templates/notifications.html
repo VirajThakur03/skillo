@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Notifications Hub</p>
+        <h1>Review booking, quote, and payment alerts in one inbox.</h1>
+        <p class="muted">In-app alerts are live now, and your preference settings are saved here for future channel expansion.</p>
+      </div>
+      <button class="btn ghost" id="markAllReadBtn" type="button">Mark all read</button>
+    </div>
+  </div>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Preferences</p>
+        <h2>Delivery settings</h2>
+        <p class="muted">Choose which updates matter most, then set quiet hours for non-urgent alerts.</p>
+      </div>
+      <button class="btn primary" id="savePrefsBtn" type="button">Save preferences</button>
+    </div>
+
+    <div class="dashboard-metrics">
+      <label class="metric-card">
+        <span class="muted">Push enabled</span>
+        <input id="prefPush" type="checkbox">
+      </label>
+      <label class="metric-card">
+        <span class="muted">Email enabled</span>
+        <input id="prefEmail" type="checkbox">
+      </label>
+      <label class="metric-card">
+        <span class="muted">WhatsApp enabled</span>
+        <input id="prefWhatsApp" type="checkbox">
+      </label>
+      <label class="metric-card">
+        <span class="muted">Quiet hours</span>
+        <input id="prefQuiet" type="checkbox">
+      </label>
+    </div>
+
+    <div class="field-grid compact">
+      <div>
+        <label for="quietStart">Quiet hours start</label>
+        <input id="quietStart" type="time" value="22:00">
+      </div>
+      <div>
+        <label for="quietEnd">Quiet hours end</label>
+        <input id="quietEnd" type="time" value="07:00">
+      </div>
+    </div>
+
+    <div class="policy-list" id="preferenceMatrix"></div>
+    <p id="prefsStatus" class="status-panel" style="display:none;"></p>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Inbox</p>
+        <h2>Recent alerts</h2>
+      </div>
+    </div>
+    <div id="notificationList" class="job-list"></div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch } from "/static/js/main.js";
+
+const prefPush = document.getElementById("prefPush");
+const prefEmail = document.getElementById("prefEmail");
+const prefWhatsApp = document.getElementById("prefWhatsApp");
+const prefQuiet = document.getElementById("prefQuiet");
+const quietStart = document.getElementById("quietStart");
+const quietEnd = document.getElementById("quietEnd");
+const notificationList = document.getElementById("notificationList");
+const preferenceMatrix = document.getElementById("preferenceMatrix");
+const prefsStatus = document.getElementById("prefsStatus");
+
+const CATEGORY_CONFIG = [
+  {
+    key: "BOOKING_UPDATE",
+    title: "Booking updates",
+    description: "Confirmations, provider arrival, cancellations, and timeline changes.",
+  },
+  {
+    key: "QUOTE_UPDATE",
+    title: "Quote updates",
+    description: "New quotes, provider follow-ups, and accepted or expired requests.",
+  },
+  {
+    key: "PAYMENT_UPDATE",
+    title: "Payment updates",
+    description: "Charges, refunds, payout confirmations, and wallet credits.",
+  },
+  {
+    key: "CHAT_MENTION",
+    title: "Chat mentions",
+    description: "New booking messages and important follow-ups.",
+  },
+  {
+    key: "PROMOTION",
+    title: "Offers and rewards",
+    description: "Membership perks, promos, and referral credits.",
+  },
+];
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function setPrefsStatus(message, type = "info") {
+  prefsStatus.style.display = "block";
+  prefsStatus.className = `status-panel ${type === "error" ? "error-text" : type === "success" ? "success-text" : ""}`;
+  prefsStatus.innerText = message;
+}
+
+function channelCheckboxId(categoryKey, channel) {
+  return `pref-${categoryKey.toLowerCase()}-${channel}`;
+}
+
+function renderPreferenceMatrix(categoryChannels = {}) {
+  preferenceMatrix.innerHTML = CATEGORY_CONFIG.map((category) => {
+    const selectedChannels = new Set(categoryChannels?.[category.key] || []);
+    return `
+      <article class="policy-item">
+        <div class="section-head">
+          <div>
+            <h3>${escapeHtml(category.title)}</h3>
+            <p class="muted">${escapeHtml(category.description)}</p>
+          </div>
+          <span class="small-pill">${escapeHtml(category.key.replaceAll("_", " "))}</span>
+        </div>
+        <div class="job-meta">
+          <label><input id="${channelCheckboxId(category.key, "push")}" type="checkbox" ${selectedChannels.has("push") ? "checked" : ""}> Push</label>
+          <label><input id="${channelCheckboxId(category.key, "email")}" type="checkbox" ${selectedChannels.has("email") ? "checked" : ""}> Email</label>
+          <label><input id="${channelCheckboxId(category.key, "whatsapp")}" type="checkbox" ${selectedChannels.has("whatsapp") ? "checked" : ""}> WhatsApp</label>
+          <label><input id="${channelCheckboxId(category.key, "in_app")}" type="checkbox" ${selectedChannels.has("in_app") ? "checked" : ""}> In-app</label>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function collectCategoryChannels() {
+  return CATEGORY_CONFIG.reduce((accumulator, category) => {
+    const selectedChannels = ["push", "email", "whatsapp", "in_app"].filter((channel) => {
+      const input = document.getElementById(channelCheckboxId(category.key, channel));
+      return Boolean(input?.checked);
+    });
+    accumulator[category.key] = selectedChannels;
+    return accumulator;
+  }, {});
+}
+
+function syncQuietHourFields() {
+  const enabled = prefQuiet.checked;
+  quietStart.disabled = !enabled;
+  quietEnd.disabled = !enabled;
+}
+
+async function loadPreferences() {
+  const response = await authFetch("/api/notifications/preferences");
+  if (!response.ok) {
+    if (response.status === 404) {
+      setPrefsStatus("Notifications module is not enabled in this environment yet.", "error");
+      return;
+    }
+    setPrefsStatus(response.data?.error || "Unable to load your delivery preferences.", "error");
+    return;
+  }
+
+  prefPush.checked = Boolean(response.data.push_enabled);
+  prefEmail.checked = Boolean(response.data.email_enabled);
+  prefWhatsApp.checked = Boolean(response.data.whatsapp_enabled);
+  prefQuiet.checked = Boolean(response.data.quiet_hours_enabled);
+  quietStart.value = response.data.quiet_start_local || "22:00";
+  quietEnd.value = response.data.quiet_end_local || "07:00";
+  renderPreferenceMatrix(response.data.category_channels || {});
+  syncQuietHourFields();
+  setPrefsStatus("Preferences loaded. Update any channel and save when you are ready.");
+}
+
+async function loadNotifications() {
+  notificationList.innerHTML = `
+    <div class="mk-loading-stack">
+      <div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div>
+      <div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div>
+      <div class="mk-card"><div class="mk-skeleton" style="height:72px;"></div></div>
+    </div>
+  `;
+  const response = await authFetch("/api/notifications");
+  if (!response.ok) {
+    if (response.status === 404) {
+      notificationList.innerHTML = `<div class="mk-card mk-empty-state"><h3 class="mk-heading">Notifications coming soon</h3><p class="mk-body-sm">This environment does not have notification APIs enabled yet.</p></div>`;
+      return;
+    }
+    notificationList.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">${escapeHtml(response.data?.error || "Unable to load notifications.")}</p></div>`;
+    return;
+  }
+
+  const items = response.data.items || [];
+  if (!items.length) {
+    notificationList.innerHTML = `<div class="mk-card mk-empty-state"><h3 class="mk-heading">You're all caught up</h3><p class="mk-body-sm">Booking updates, quotes, payments, and support decisions will appear here as they happen.</p></div>`;
+    return;
+  }
+
+  notificationList.innerHTML = items.map((item) => `
+    <article class="job-item mk-card mk-card-booking mk-booking-accent" data-state="${item.read ? "completed" : "pending"}">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(item.title)}</h3>
+          <p class="muted">${escapeHtml(item.body)}</p>
+        </div>
+        <span class="mk-chip" data-state="${item.read ? "completed" : "pending"}">${item.read ? "Read" : "Unread"}</span>
+      </div>
+      <div class="job-meta">
+        <span>${escapeHtml(item.category)}</span>
+        <span>${new Date(item.created_at).toLocaleString()}</span>
+      </div>
+      <div class="job-route-actions">
+        ${item.deep_link ? `<a class="btn ghost" href="${escapeHtml(item.deep_link)}">Open</a>` : ""}
+        ${item.read ? "" : `<button class="btn primary" type="button" data-read-id="${item.id}">Mark read</button>`}
+      </div>
+    </article>
+  `).join("");
+  if (window.lucide) window.lucide.createIcons();
+
+  document.querySelectorAll("[data-read-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await authFetch(`/api/notifications/${button.dataset.readId}/read`, { method: "POST" });
+      loadNotifications();
+    });
+  });
+}
+
+document.getElementById("savePrefsBtn").addEventListener("click", async () => {
+  setPrefsStatus("Saving your delivery preferences...");
+
+  const response = await authFetch("/api/notifications/preferences", {
+    method: "PUT",
+    body: JSON.stringify({
+      push_enabled: prefPush.checked,
+      email_enabled: prefEmail.checked,
+      whatsapp_enabled: prefWhatsApp.checked,
+      quiet_hours_enabled: prefQuiet.checked,
+      quiet_start_local: prefQuiet.checked ? quietStart.value : null,
+      quiet_end_local: prefQuiet.checked ? quietEnd.value : null,
+      category_channels: collectCategoryChannels(),
+    }),
+  });
+
+  if (!response.ok) {
+    setPrefsStatus(response.data?.error || "Unable to save preferences right now.", "error");
+    return;
+  }
+
+  setPrefsStatus("Preferences saved.", "success");
+  loadPreferences();
+});
+
+document.getElementById("markAllReadBtn").addEventListener("click", async () => {
+  await authFetch("/api/notifications/read-all", { method: "POST" });
+  loadNotifications();
+});
+
+prefQuiet.addEventListener("change", syncQuietHourFields);
+
+loadPreferences();
+loadNotifications();
+</script>
+{% endblock %}

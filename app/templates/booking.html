@@ -1,75 +1,563 @@
 {% extends "base.html" %}
 
+{% block title %}Book a Service | Sklio{% endblock %}
 {% block content %}
-<div class="card glass">
-  <h2>Book: {{ skill.title }}</h2>
-  <p class="muted">Provider: {{ skill.provider.name }}</p>
+<section class="section">
+  <a href="javascript:history.back()" class="btn ghost small" style="margin-bottom: 16px;">← Back</a>
+  <div class="card mk-card mk-card-booking mk-booking-accent" data-state="pending">
+    <div class="badge-row">
+      <span class="chip">Booking step</span>
+      <span class="chip success">Verified provider</span>
+    </div>
+    <h2>Book: {{ skill.title }}</h2>
+    <p class="muted">Provider: {{ skill.provider.name }}</p>
 
-  <form id="bookingForm">
-    <label>Date & Time</label>
-    <input id="scheduled_at" type="datetime-local" required />
+    <div class="mk-booking-timeline" style="margin:16px 0;">
+      <div class="mk-step is-active">
+        <div class="mk-step-circle mk-step-active"><i data-lucide="file-text" style="width:14px;height:14px;"></i></div>
+        <div class="mk-step-label">Requested</div>
+      </div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="check-circle" style="width:14px;height:14px;"></i></div><div class="mk-step-label">Confirmed</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="navigation" style="width:14px;height:14px;"></i></div><div class="mk-step-label">En route</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="map-pin" style="width:14px;height:14px;"></i></div><div class="mk-step-label">Arrived</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="wrench" style="width:14px;height:14px;"></i></div><div class="mk-step-label">In progress</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="star" style="width:14px;height:14px;"></i></div><div class="mk-step-label">Completed</div></div>
+    </div>
 
-    <label>Duration</label>
-    <select id="duration">
-      <option value="60">1 hour</option>
-      <option value="120">2 hours</option>
-      <option value="180">3 hours</option>
-    </select>
+    <div class="grid grid-2" style="margin-top:16px;">
+      <form id="bookingForm" class="card mk-card">
+        <label class="mk-label">Select a time slot</label>
+        <input id="scheduled_at" type="hidden" required />
+        <div id="slotPicker" class="mk-card" style="padding:12px;margin-top:8px;"></div>
+        <p id="scheduledError" class="mk-field-error"></p>
 
-    <p><strong>Price:</strong> ₹{{ '%.0f'|format(skill.price) }}</p>
-    <p id="walletInfo" class="muted"></p>
+        <label class="mk-label" style="margin-top:12px;">Duration</label>
+        <select id="duration">
+          <option value="60">1 hour</option>
+          <option value="120">2 hours</option>
+          <option value="180">3 hours</option>
+        </select>
 
-    <button class="btn primary" id="bookBtn">
-      Confirm Booking
-    </button>
-  </form>
+        <p style="margin-top:12px;"><strong>Base price:</strong> ₹{{ '%.0f'|format(skill.price) }}</p>
+        <p id="walletInfo" class="muted"></p>
 
-  <p id="status" class="muted" style="margin-top:8px;"></p>
-  <pre id="resp" style="margin-top:10px;"></pre>
+        <button class="btn primary" id="bookBtn" data-testid="confirm-booking-btn" style="margin-top:12px;">
+          Confirm booking
+        </button>
+      </form>
 
-  <div id="paySection" style="margin-top:14px;"></div>
+      <div class="quote-card mk-card-quote mk-card">
+        <h4 class="mk-heading">Quote preview</h4>
+        <p class="mk-body-sm">Clear pricing before you confirm.</p>
+        <div style="margin-top:12px;">
+          <button class="btn ghost" type="button" id="promoToggleBtn">Have a promo code?</button>
+          <div id="promoPanel" class="mk-card" style="display:none;padding:12px;margin-top:8px;background:var(--gray-50);border-color:var(--gray-200);">
+            <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+              <input id="promoCodeInput" type="text" placeholder="Enter code" style="flex:1;min-width:160px;text-transform:uppercase;" />
+              <button class="btn secondary" type="button" id="promoApplyBtn">Apply</button>
+            </div>
+            <p id="promoError" class="mk-field-error" style="margin-top:8px;"></p>
+            <div id="promoApplied" style="display:none;margin-top:8px;"></div>
+          </div>
+        </div>
+        <div class="skill-meta" style="margin-top:8px;">
+          <span>Service fee</span>
+          <span>•</span>
+          <span>Platform fee</span>
+          <span class="mk-tooltip-wrap">
+            <button class="mk-tooltip-trigger" type="button" aria-label="Platform fee info">i</button>
+            <span class="mk-tooltip-pop">Covers secure payments, insurance, and 24/7 customer support.</span>
+          </span>
+        </div>
+        <div style="margin-top:10px;">
+          <span class="mk-chip" data-state="arrived" id="nextSlotChip"><i data-lucide="zap" style="width:12px;height:12px;"></i>Checking next slot…</span>
+        </div>
+        <div class="mk-card" style="padding:12px;margin-top:12px;background:var(--surface-0);">
+          <div style="display:grid;gap:8px;">
+            <div style="display:flex;justify-content:space-between;gap:12px;" class="mk-body-sm">
+              <span>Service</span>
+              <strong id="quoteServiceAmount">INR 0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;" class="mk-body-sm">
+              <span>Wallet credit</span>
+              <strong id="quoteWalletAmount">- INR 0</strong>
+            </div>
+            <div id="quotePromoRow" style="display:none;justify-content:space-between;gap:12px;" class="mk-body-sm">
+              <span>Promo discount</span>
+              <strong id="quotePromoAmount">- INR 0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;" class="mk-body-sm">
+              <span>Platform fee</span>
+              <strong id="quotePlatformFee">INR 0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;" class="mk-body-sm">
+              <span>Estimated GST</span>
+              <strong id="quoteGstAmount">INR 0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;padding-top:8px;border-top:1px solid var(--gray-200);" class="mk-subheading">
+              <span>Total to pay</span>
+              <strong id="quoteTotalAmount">INR 0</strong>
+            </div>
+          </div>
+        </div>
+        <div id="cancellationPolicyPanel" class="mk-card" style="padding:12px;margin-top:12px;background:var(--gray-50);border-color:var(--gray-200);">
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <i data-lucide="shield-check" style="width:16px;height:16px;color:var(--brand-700);margin-top:2px;"></i>
+            <div style="flex:1;">
+              <div class="mk-subheading" id="policyHeadline">Free cancellation until slot selection</div>
+              <p class="mk-body-sm" id="policyFeeLine" style="margin-top:6px;"></p>
+              <p class="mk-body-sm" style="margin-top:6px;">
+                Provider cancellations are always fully refunded.
+              </p>
+              <div id="policyWarning" style="display:none;margin-top:8px;">
+                <span class="mk-chip" style="background:var(--warning-50);color:var(--warning-600);">Fee applies now</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="status" data-testid="booking-status-banner" class="muted" style="margin-top:16px;"></div>
+    <div id="bookingConfirmedMarker" data-testid="booking-confirmed" hidden></div>
+    <div id="bookingIdMarker" data-testid="booking-id" hidden></div>
+    <div id="paySection" style="margin-top:16px;"></div>
+  </div>
+</section>
+
+<div class="book-bar mk-book-bar">
+  <div>
+    <div class="mk-label">Estimated price</div>
+    <strong class="mk-price">₹{{ '%.0f'|format(skill.price) }}</strong>
+  </div>
+  <button class="btn primary" id="stickyBookBtn" data-testid="book-now-btn">Book now</button>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-import { getToken, authFetch } from "/static/js/main.js";
+import { getToken, authFetch, useFeature } from "/static/js/main.js";
 
 const walletInfoEl = document.getElementById("walletInfo");
 const statusEl = document.getElementById("status");
-const respEl = document.getElementById("resp");
 const payDiv = document.getElementById("paySection");
+const slotPickerEl = document.getElementById("slotPicker");
+const scheduledInputEl = document.getElementById("scheduled_at");
+const scheduledErrorEl = document.getElementById("scheduledError");
+const nextSlotChipEl = document.getElementById("nextSlotChip");
+const policyHeadlineEl = document.getElementById("policyHeadline");
+const policyFeeLineEl = document.getElementById("policyFeeLine");
+const policyWarningEl = document.getElementById("policyWarning");
+const promoToggleBtn = document.getElementById("promoToggleBtn");
+const promoPanelEl = document.getElementById("promoPanel");
+const promoCodeInputEl = document.getElementById("promoCodeInput");
+const promoApplyBtn = document.getElementById("promoApplyBtn");
+const promoErrorEl = document.getElementById("promoError");
+const promoAppliedEl = document.getElementById("promoApplied");
+const quoteServiceAmountEl = document.getElementById("quoteServiceAmount");
+const quoteWalletAmountEl = document.getElementById("quoteWalletAmount");
+const quotePromoRowEl = document.getElementById("quotePromoRow");
+const quotePromoAmountEl = document.getElementById("quotePromoAmount");
+const quotePlatformFeeEl = document.getElementById("quotePlatformFee");
+const quoteGstAmountEl = document.getElementById("quoteGstAmount");
+const quoteTotalAmountEl = document.getElementById("quoteTotalAmount");
 const btn = document.getElementById("bookBtn");
+const stickyBtn = document.getElementById("stickyBookBtn");
+let bookingCreated = false;
+const cancellationPolicy = {{ cancellation_policy|tojson }};
+const baseSkillPrice = Number({{ skill.price|float }});
+let walletBalance = 0;
+let promoState = {
+  expanded: false,
+  code: "",
+  valid: false,
+  discountAmount: 0,
+  finalAmount: 0,
+};
+let slotState = {
+  weekStart: startOfWeek(new Date()),
+  timezone: "Asia/Kolkata",
+  slots: [],
+  selected: null,
+  loading: false,
+};
 
-/* ---------------- PROVIDER FROM URL ---------------- */
 const params = new URLSearchParams(window.location.search);
-const providerId = params.get("provider");
-
-if (!providerId) {
-  alert("Provider missing. Please select a provider again.");
-  window.location.replace("/home");
+const providerId = params.get("provider") || "{{ skill.provider.id }}";
+if (!params.get("provider")) {
+  statusEl.innerText = "Provider selected automatically for this booking.";
 }
 
-/* ---------------- WALLET ---------------- */
+function startOfWeek(dateObj) {
+  const copy = new Date(dateObj);
+  const day = (copy.getDay() + 6) % 7;
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - day);
+  return copy;
+}
+
+function isoDate(dateObj) {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatWeekdayLabel(dateValue) {
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(`${dateValue}T00:00:00`));
+}
+
+function formatDateTime(dateValue) {
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slotState.timezone || "Asia/Kolkata",
+  }).format(new Date(dateValue));
+}
+
+function formatTimeRange(startAt, endAt) {
+  const start = new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slotState.timezone || "Asia/Kolkata",
+  }).format(new Date(startAt));
+  const end = new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slotState.timezone || "Asia/Kolkata",
+  }).format(new Date(endAt));
+  return `${start}–${end}`;
+}
+
+function currentDurationHours() {
+  return Number(document.getElementById("duration").value || 60) / 60;
+}
+
+function bookingQuote() {
+  const service = Math.round(baseSkillPrice * currentDurationHours());
+  const walletUsed = Math.min(walletBalance, service);
+  const subtotal = Math.max(0, service - walletUsed);
+  const promoDiscount = promoState.valid ? Math.min(Number(promoState.discountAmount || 0), subtotal) : 0;
+  const payableBeforeFees = Math.max(0, subtotal - promoDiscount);
+  const platformFee = Number(((payableBeforeFees * 5) / 100).toFixed(2));
+  const gst = Number((platformFee * 0.18).toFixed(2));
+  return {
+    service,
+    walletUsed,
+    promoDiscount,
+    payableBeforeFees,
+    platformFee,
+    gst,
+    total: Number(payableBeforeFees.toFixed(2)),
+  };
+}
+
+function renderPromoState() {
+  promoPanelEl.style.display = promoState.expanded ? "block" : "none";
+  promoToggleBtn.textContent = promoState.expanded ? "Hide promo code" : "Have a promo code?";
+  promoCodeInputEl.value = promoState.code;
+  if (promoState.valid) {
+    promoAppliedEl.style.display = "block";
+    promoAppliedEl.innerHTML = `
+      <span class="mk-chip" style="background:var(--success-50);color:var(--success-700);">
+        ${promoState.code} applied - INR ${Number(promoState.discountAmount || 0).toFixed(0)} off
+      </span>
+      <button class="btn ghost" type="button" id="promoClearBtn" style="margin-left:8px;">×</button>
+    `;
+    promoErrorEl.textContent = "";
+    document.getElementById("promoClearBtn")?.addEventListener("click", clearPromo);
+  } else {
+    promoAppliedEl.style.display = "none";
+    promoAppliedEl.innerHTML = "";
+  }
+}
+
+function renderQuotePreview() {
+  const quote = bookingQuote();
+  quoteServiceAmountEl.textContent = `INR ${quote.service.toFixed(0)}`;
+  quoteWalletAmountEl.textContent = `- INR ${quote.walletUsed.toFixed(0)}`;
+  quotePlatformFeeEl.textContent = `INR ${quote.platformFee.toFixed(0)}`;
+  quoteGstAmountEl.textContent = `INR ${quote.gst.toFixed(0)}`;
+  quoteTotalAmountEl.textContent = `INR ${quote.total.toFixed(0)}`;
+  if (quote.promoDiscount > 0) {
+    quotePromoRowEl.style.display = "flex";
+    quotePromoAmountEl.textContent = `- INR ${quote.promoDiscount.toFixed(0)}`;
+  } else {
+    quotePromoRowEl.style.display = "none";
+    quotePromoAmountEl.textContent = "- INR 0";
+  }
+}
+
+function clearPromo() {
+  promoState = {
+    expanded: true,
+    code: "",
+    valid: false,
+    discountAmount: 0,
+    finalAmount: 0,
+  };
+  promoErrorEl.textContent = "";
+  renderPromoState();
+  renderQuotePreview();
+  renderCancellationPolicy();
+}
+
+function invalidatePromoForQuoteChange() {
+  if (!promoState.valid) return;
+  promoState.valid = false;
+  promoState.discountAmount = 0;
+  promoState.finalAmount = 0;
+  promoErrorEl.textContent = "Reapply your promo for the updated total.";
+  renderPromoState();
+  renderQuotePreview();
+}
+
+function setSelectedSlot(startAt) {
+  slotState.selected = startAt;
+  scheduledInputEl.value = startAt;
+  scheduledErrorEl.textContent = "";
+  renderSlotPicker();
+  renderCancellationPolicy();
+}
+
+function groupedSlots() {
+  const groups = new Map();
+  for (let index = 0; index < 7; index += 1) {
+    const dateValue = new Date(slotState.weekStart);
+    dateValue.setDate(dateValue.getDate() + index);
+    groups.set(isoDate(dateValue), []);
+  }
+  for (const slot of slotState.slots) {
+    if (!groups.has(slot.date)) {
+      groups.set(slot.date, []);
+    }
+    groups.get(slot.date).push(slot);
+  }
+  return [...groups.entries()];
+}
+
+function firstAvailableSlot() {
+  return slotState.slots.find((slot) => slot.available);
+}
+
+function renderSlotPicker() {
+  if (slotState.loading) {
+    slotPickerEl.innerHTML = `
+      <div class="mk-loading-stack">
+        <div class="mk-skeleton" style="height:24px;width:180px;"></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div class="mk-skeleton" style="height:80px;"></div>
+          <div class="mk-skeleton" style="height:80px;"></div>
+          <div class="mk-skeleton" style="height:80px;"></div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const available = firstAvailableSlot();
+  if (available) {
+    nextSlotChipEl.innerHTML = `<i data-lucide="zap" style="width:12px;height:12px;"></i>Next: ${formatDateTime(available.start_at)}`;
+    nextSlotChipEl.style.cursor = "pointer";
+    nextSlotChipEl.onclick = () => setSelectedSlot(available.start_at);
+  } else {
+    nextSlotChipEl.innerHTML = `<i data-lucide="calendar-x2" style="width:12px;height:12px;"></i>No slots this week`;
+    nextSlotChipEl.onclick = null;
+    nextSlotChipEl.style.cursor = "default";
+  }
+
+  const columns = groupedSlots().map(([dateValue, slots]) => {
+    const isToday = isoDate(new Date()) === dateValue;
+    const slotButtons = slots.length
+      ? slots.map((slot) => {
+          const isSelected = slotState.selected === slot.start_at;
+          let style = "width:100%;text-align:left;border:none;border-radius:9999px;padding:8px 10px;font:500 12px/1.3 var(--font-body);";
+          if (isSelected) {
+            style += "background:var(--brand-600);color:white;";
+          } else if (!slot.available) {
+            style += "background:var(--gray-100);color:var(--gray-400);text-decoration:line-through;cursor:not-allowed;";
+          } else if (slot.instant_book) {
+            style += "background:var(--success-50);color:var(--success-700);";
+          } else {
+            style += "background:var(--brand-50);color:var(--brand-700);";
+          }
+          const subtitle = !slot.available && slot.reason ? `<div style="font-size:10px;opacity:.85;margin-top:2px;">${slot.reason}</div>` : "";
+          return `<button type="button" ${slot.available ? "" : "disabled"} data-mk-slot="${slot.start_at}" data-testid="slot-chip" style="${style}">${slot.time}${subtitle}</button>`;
+        }).join("")
+      : `<div class="mk-body-sm" style="color:var(--gray-400);">No slots</div>`;
+    return `
+      <div class="mk-card" style="padding:10px;background:${isToday ? "var(--brand-50)" : "var(--surface-0)"};">
+        <div class="mk-label-upper" style="margin-bottom:8px;">${formatWeekdayLabel(dateValue)}</div>
+        <div style="display:grid;gap:6px;">${slotButtons}</div>
+      </div>
+    `;
+  }).join("");
+
+  const selectedSummary = slotState.selected
+    ? (() => {
+        const selected = slotState.slots.find((slot) => slot.start_at === slotState.selected);
+        if (!selected) return "";
+        return `
+          <div class="mk-card" style="padding:10px;margin-top:12px;background:var(--brand-50);border-color:var(--brand-100);">
+            <div class="mk-label-upper">Selected slot</div>
+            <div class="mk-subheading">${formatDateTime(selected.start_at)}</div>
+            <div class="mk-body-sm">${formatTimeRange(selected.start_at, selected.end_at)}</div>
+          </div>
+        `;
+      })()
+    : "";
+
+  slotPickerEl.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;">
+      <button type="button" class="btn ghost" id="slotPrevWeek">Previous</button>
+      <div class="mk-subheading">${formatWeekdayLabel(isoDate(slotState.weekStart))}</div>
+      <button type="button" class="btn ghost" id="slotNextWeek">Next</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;">
+      ${columns}
+    </div>
+    ${selectedSummary}
+  `;
+
+  slotPickerEl.querySelector("#slotPrevWeek")?.addEventListener("click", async () => {
+    const prev = new Date(slotState.weekStart);
+    prev.setDate(prev.getDate() - 7);
+    slotState.weekStart = prev;
+    await loadAvailability();
+  });
+  slotPickerEl.querySelector("#slotNextWeek")?.addEventListener("click", async () => {
+    const next = new Date(slotState.weekStart);
+    next.setDate(next.getDate() + 7);
+    slotState.weekStart = next;
+    await loadAvailability();
+  });
+  slotPickerEl.querySelectorAll("[data-mk-slot]").forEach((button) => {
+    button.addEventListener("click", () => setSelectedSlot(button.dataset.mkSlot));
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderCancellationPolicy() {
+  if (!slotState.selected) {
+    policyHeadlineEl.textContent = `Free cancellation until ${cancellationPolicy.free_before}`;
+    policyFeeLineEl.innerHTML = `After that, <strong>${cancellationPolicy.fee_percent}%</strong> cancellation fee applies once your slot is booked.`;
+    policyWarningEl.style.display = "none";
+    return;
+  }
+
+  const slotStart = new Date(slotState.selected);
+  const cutoff = new Date(slotStart.getTime() - (Number(cancellationPolicy.cutoff_hours || 2) * 60 * 60 * 1000));
+  const duration = Number(document.getElementById("duration").value || 60);
+  const estimatedTotal = baseSkillPrice * (duration / 60);
+  const feeAmount = Math.round((estimatedTotal * Number(cancellationPolicy.fee_percent || 20)) / 100);
+
+  policyHeadlineEl.innerHTML = `Free cancellation until <strong>${formatDateTime(cutoff.toISOString())}</strong>`;
+  policyFeeLineEl.innerHTML = `After that, <strong>${cancellationPolicy.fee_percent}%</strong> cancellation fee applies (<strong>₹${feeAmount}</strong> of your <strong>₹${Math.round(estimatedTotal)}</strong> booking).`;
+  policyWarningEl.style.display = cutoff.getTime() < Date.now() ? "block" : "none";
+}
+
+async function loadAvailability() {
+  slotState.loading = true;
+  renderSlotPicker();
+  const res = await authFetch(
+    `/api/availability/providers/${providerId}?skill_id={{ skill.id }}&week_start=${encodeURIComponent(isoDate(slotState.weekStart))}`
+  );
+  slotState.loading = false;
+
+  if (!res.ok) {
+    slotPickerEl.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">${res.data?.error || "Unable to load time slots."}</p></div>`;
+    nextSlotChipEl.innerHTML = `<i data-lucide="calendar-x2" style="width:12px;height:12px;"></i>Slots unavailable`;
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  slotState.timezone = res.data.timezone || "Asia/Kolkata";
+  slotState.slots = res.data.slots || [];
+  if (slotState.selected && !slotState.slots.some((slot) => slot.start_at === slotState.selected && slot.available)) {
+    slotState.selected = null;
+    scheduledInputEl.value = "";
+  }
+  renderSlotPicker();
+  renderCancellationPolicy();
+}
+
 async function loadWallet() {
   if (!getToken()) {
-    walletInfoEl.innerText =
-      "Please login as seeker before booking.";
+    walletInfoEl.innerText = "Please login as seeker before booking.";
     return;
   }
 
   const res = await authFetch("/api/auth/me");
   if (res.ok) {
+    walletBalance = Number(res.data.wallet_balance || 0);
     walletInfoEl.innerText =
-      `Wallet credits: ₹${Number(res.data.wallet_balance || 0).toFixed(0)} (used first)`;
+      `Wallet credits: ₹${walletBalance.toFixed(0)} (used first)`;
+    renderQuotePreview();
   } else {
     walletInfoEl.innerText = "Unable to load wallet info.";
   }
 }
 
-/* ---------------- BOOKING ---------------- */
+async function applyPromo() {
+  const code = promoCodeInputEl.value.trim().toUpperCase();
+  promoState.code = code;
+  promoErrorEl.textContent = "";
+  if (!code) {
+    promoState.valid = false;
+    promoErrorEl.textContent = "Enter a promo code.";
+    renderPromoState();
+    renderQuotePreview();
+    return;
+  }
+
+  promoApplyBtn.disabled = true;
+  const quote = bookingQuote();
+  const response = await authFetch("/api/promos/validate", {
+    method: "POST",
+    body: JSON.stringify({
+      code,
+      booking_amount: quote.service - quote.walletUsed,
+    }),
+  });
+  promoApplyBtn.disabled = false;
+
+  if (!response.ok || !response.data?.valid) {
+    promoState.valid = false;
+    promoState.discountAmount = 0;
+    promoState.finalAmount = 0;
+    promoErrorEl.textContent = response.data?.message || "Code not found";
+    renderPromoState();
+    renderQuotePreview();
+    return;
+  }
+
+  promoState.valid = true;
+  promoState.discountAmount = Number(response.data.discount_amount || 0);
+  promoState.finalAmount = Number(response.data.final_amount || 0);
+  promoErrorEl.textContent = "";
+  renderPromoState();
+  renderQuotePreview();
+}
+
 async function submitBooking(e) {
   e.preventDefault();
+  if (bookingCreated) {
+    statusEl.innerText = "Booking already created for this service.";
+    return;
+  }
 
   if (!getToken()) {
     window.location.replace("/demo_login");
@@ -80,36 +568,68 @@ async function submitBooking(e) {
   const duration = Number(document.getElementById("duration").value);
 
   if (!scheduled_at) {
-    statusEl.innerText = "Please select date & time";
+    scheduledErrorEl.textContent = "Please choose an available time slot.";
+    statusEl.innerText = "Please choose an available time slot.";
     return;
   }
 
   btn.disabled = true;
-  statusEl.innerText = "Creating booking…";
+  stickyBtn.disabled = true;
+  statusEl.innerText = "Creating booking...";
 
   const res = await authFetch("/api/bookings", {
     method: "POST",
     body: JSON.stringify({
       skill_id: {{ skill.id }},
-      provider_id: providerId,      // ✅ REQUIRED
+      provider_id: providerId,
       scheduled_at,
-      duration_minutes: duration
+      duration_minutes: duration,
+      promo_code: promoState.valid ? promoState.code : null
     })
   });
 
-  respEl.innerText = JSON.stringify(res.data, null, 2);
-
   if (!res.ok) {
+    if (res.status === 409 && res.data?.error === "slot_taken") {
+      scheduledErrorEl.textContent = res.data?.message || "That slot is no longer available.";
+      statusEl.innerText = res.data?.message || "That slot is no longer available.";
+      await loadAvailability();
+      btn.disabled = false;
+      stickyBtn.disabled = false;
+      return;
+    }
+    if (res.status === 409 && res.data?.existing_booking_id) {
+      const existingId = res.data.existing_booking_id;
+      statusEl.innerText = res.data.error || "Active booking already exists.";
+      payDiv.innerHTML = `
+        <p class="muted">You already have an active booking for this provider and service.</p>
+        <p class="small muted">
+          <a href="/chat/booking_${existingId}">Chat</a> •
+          <a href="/track/${existingId}">Track</a>
+        </p>
+      `;
+      bookingCreated = true;
+      btn.disabled = true;
+      stickyBtn.disabled = true;
+      return;
+    }
     statusEl.innerText = res.data?.error || "Booking failed";
     btn.disabled = false;
+    stickyBtn.disabled = false;
     return;
   }
 
-  statusEl.innerText = "Booking created ✔";
-
+  statusEl.innerText = "Booking created.";
   const bookingId = res.data.id;
+  const confirmedMarker = document.getElementById("bookingConfirmedMarker");
+  const bookingIdMarker = document.getElementById("bookingIdMarker");
+  confirmedMarker.hidden = false;
+  confirmedMarker.textContent = "Booking confirmed";
+  bookingIdMarker.hidden = false;
+  bookingIdMarker.textContent = `Booking #${bookingId}`;
+  bookingCreated = true;
   const remaining = res.data.payable_amount || 0;
   const referralUsed = res.data.wallet_used || 0;
+  const promoDiscount = res.data.promo_discount || 0;
 
   const chatUrl  = `/chat/booking_${bookingId}`;
   const trackUrl = `/track/${bookingId}`;
@@ -118,8 +638,9 @@ async function submitBooking(e) {
     payDiv.innerHTML = `
       <p>Remaining to pay: ₹${remaining.toFixed(0)}</p>
       <p class="muted">Referral used: ₹${referralUsed.toFixed(0)}</p>
-      <button class="btn neon" id="payBtn">Pay Now</button>
-      <p>
+      ${promoDiscount > 0 ? `<p class="muted">Promo saved: ₹${promoDiscount.toFixed(0)}</p>` : ""}
+      <button class="btn secondary" id="payBtn">Pay now</button>
+      <p class="small muted">
         <a href="${chatUrl}">Chat</a> •
         <a href="${trackUrl}">Track</a>
       </p>
@@ -130,18 +651,28 @@ async function submitBooking(e) {
       .addEventListener("click", () => payBooking(bookingId));
   } else {
     payDiv.innerHTML = `
-      <p>No payment required (wallet covered full amount)</p>
-      <p>
+      <p>No payment required (wallet covered full amount).</p>
+      <p class="small muted">
         <a href="${chatUrl}">Chat</a> •
         <a href="${trackUrl}">Track</a>
       </p>
     `;
   }
+  btn.disabled = true;
+  stickyBtn.disabled = true;
 }
 
-/* ---------------- PAYMENT ---------------- */
 async function payBooking(bookingId) {
-  statusEl.innerText = "Processing payment…";
+  statusEl.innerText = "Processing payment...";
+
+  const sessionRes = await authFetch(`/api/bookings/${bookingId}/payment-session`, {
+    method: "POST"
+  });
+
+  if (sessionRes.ok && sessionRes.data?.checkout_url) {
+    window.location.assign(sessionRes.data.checkout_url);
+    return;
+  }
 
   const res = await authFetch(`/api/bookings/${bookingId}/pay`, {
     method: "POST",
@@ -151,18 +682,44 @@ async function payBooking(bookingId) {
   });
 
   if (res.ok) {
-    alert("Payment successful!");
+    statusEl.innerText = "Payment successful.";
     window.location.replace(`/track/${bookingId}`);
   } else {
-    alert(res.data?.error || "Payment failed");
+    statusEl.innerText = sessionRes.data?.error || res.data?.error || "Payment failed";
   }
 }
 
-/* ---------------- INIT ---------------- */
 document
   .getElementById("bookingForm")
   .addEventListener("submit", submitBooking);
 
-document.addEventListener("DOMContentLoaded", loadWallet);
+document.getElementById("duration").addEventListener("change", () => {
+  invalidatePromoForQuoteChange();
+  renderCancellationPolicy();
+  renderQuotePreview();
+});
+promoToggleBtn.addEventListener("click", () => {
+  promoState.expanded = !promoState.expanded;
+  renderPromoState();
+});
+promoApplyBtn.addEventListener("click", applyPromo);
+promoCodeInputEl.addEventListener("input", () => {
+  promoCodeInputEl.value = promoCodeInputEl.value.toUpperCase();
+});
+
+stickyBtn.addEventListener("click", (event) => submitBooking(event));
+document.addEventListener("DOMContentLoaded", async () => {
+  const hasPromoCodes = await useFeature("promo_codes");
+  if (!hasPromoCodes) {
+    promoToggleBtn.style.display = "none";
+    promoPanelEl.style.display = "none";
+    quotePromoRowEl.style.display = "none";
+  }
+  renderPromoState();
+  renderQuotePreview();
+  await loadWallet();
+  await loadAvailability();
+  renderCancellationPolicy();
+});
 </script>
 {% endblock %}

@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+
+{% block title %}Quote Requests | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Quote Requests</p>
+        <h1>Handle custom jobs before they become bookings.</h1>
+        <p class="muted" id="quotesMeta">Loading your quote workspace...</p>
+      </div>
+      <a class="btn ghost" href="/home">Browse providers</a>
+    </div>
+  </div>
+
+  <section class="card dashboard-section" id="quoteCreateSection" hidden>
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">New Request</p>
+        <h2>Send a custom scope to up to three providers</h2>
+        <p class="muted">Add timing, budget, and reference links so providers can quote with less back-and-forth.</p>
+      </div>
+      <button class="btn primary" id="createQuoteBtn" type="button">Create quote request</button>
+    </div>
+
+    <div class="search-panel">
+      <label for="quoteSkillId">Skill ID</label>
+      <input id="quoteSkillId" placeholder="Optional skill id">
+
+      <label for="quoteProviderIds">Provider IDs</label>
+      <input id="quoteProviderIds" placeholder="Comma separated provider ids">
+
+      <label for="quoteServiceTitle">Service title</label>
+      <input id="quoteServiceTitle" placeholder="For example AC repair">
+
+      <label for="quoteDescription">Job description</label>
+      <textarea id="quoteDescription" rows="4" placeholder="Describe the issue, photos, and expected help"></textarea>
+
+      <label for="quoteAddress">Address</label>
+      <input id="quoteAddress" placeholder="Job address">
+
+      <div class="field-grid">
+        <div>
+          <label for="quoteBudgetMin">Budget min</label>
+          <input id="quoteBudgetMin" type="number" min="0" step="1" placeholder="1000">
+        </div>
+        <div>
+          <label for="quoteBudgetMax">Budget max</label>
+          <input id="quoteBudgetMax" type="number" min="0" step="1" placeholder="2500">
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div>
+          <label for="quoteWindowStart">Preferred window start</label>
+          <input id="quoteWindowStart" type="datetime-local">
+        </div>
+        <div>
+          <label for="quoteWindowEnd">Preferred window end</label>
+          <input id="quoteWindowEnd" type="datetime-local">
+        </div>
+      </div>
+
+      <label for="quoteAttachments">Reference links</label>
+      <textarea id="quoteAttachments" rows="3" placeholder="Add image or document URLs separated by commas or new lines."></textarea>
+    </div>
+
+    <p id="quoteCreateStatus" class="status-panel" style="display:none;"></p>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Requests</p>
+        <h2>Latest quote activity</h2>
+      </div>
+    </div>
+    <div id="quoteList" class="job-list"></div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, getCurrentUser, showMkToast } from "/static/js/main.js";
+
+const quotesMeta = document.getElementById("quotesMeta");
+const quoteCreateSection = document.getElementById("quoteCreateSection");
+const quoteList = document.getElementById("quoteList");
+const quoteCreateStatus = document.getElementById("quoteCreateStatus");
+const pageParams = new URLSearchParams(window.location.search);
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function statusPill(status) {
+  return `<span class="status-pill status-${String(status).toLowerCase()}">${escapeHtml(status)}</span>`;
+}
+
+function setCreateStatus(message, type = "info") {
+  quoteCreateStatus.style.display = "block";
+  quoteCreateStatus.className = `status-panel ${type === "error" ? "error-text" : type === "success" ? "success-text" : ""}`;
+  quoteCreateStatus.innerText = message;
+}
+
+function parseList(value) {
+  return String(value || "")
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseDateValue(value) {
+  if (!value) {
+    return null;
+  }
+  return new Date(value).toISOString();
+}
+
+function parseLineItems(value) {
+  return String(value || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label, amountRaw] = line.split("|").map((item) => item.trim());
+      if (!label || !amountRaw) {
+        return null;
+      }
+      const amount = Number(amountRaw);
+      if (!Number.isFinite(amount)) {
+        return null;
+      }
+      return { label, amount };
+    })
+    .filter(Boolean);
+}
+
+function renderAttachmentList(attachments = []) {
+  if (!attachments.length) {
+    return "";
+  }
+  return `
+    <div class="job-meta">
+      ${attachments.map((attachment, index) => `
+        <a class="message-link" href="${escapeHtml(attachment)}" target="_blank" rel="noreferrer">Attachment ${index + 1}</a>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function loadQuotes() {
+  quoteList.innerHTML = `
+    <div class="mk-loading-stack">
+      <div class="mk-card"><div class="mk-skeleton" style="height:96px;"></div></div>
+      <div class="mk-card"><div class="mk-skeleton" style="height:96px;"></div></div>
+      <div class="mk-card"><div class="mk-skeleton" style="height:96px;"></div></div>
+    </div>
+  `;
+  const user = await getCurrentUser(true);
+  quoteCreateSection.hidden = user?.role !== "SEEKER";
+  quotesMeta.innerText = user?.role === "PROVIDER"
+    ? "Providers can reply to incoming quote requests from here."
+    : "Seekers can create a custom request and follow provider responses here.";
+
+  const response = await authFetch("/api/quote-requests");
+  if (!response.ok) {
+    if (response.status === 404) {
+      quoteList.innerHTML = `<div class="mk-card mk-empty-state"><h3 class="mk-heading">Quote requests coming soon</h3><p class="mk-body-sm">This environment does not have quote request APIs enabled yet.</p></div>`;
+      quoteCreateSection.hidden = true;
+      return;
+    }
+    quoteList.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">${escapeHtml(response.data?.error || "Unable to load quote requests.")}</p></div>`;
+    return;
+  }
+
+  const items = response.data.items || [];
+  if (!items.length) {
+    quoteList.innerHTML = `<div class="mk-card mk-empty-state"><p class="mk-body-sm">No quote requests yet.</p></div>`;
+    return;
+  }
+
+  quoteList.innerHTML = items.map((item) => `
+    <article class="job-item mk-card mk-card-booking mk-booking-accent" data-state="${String(item.status || '').toLowerCase()}">
+      <div class="job-header">
+        <div>
+          <h3>${escapeHtml(item.service_title)}</h3>
+          <p class="muted">${escapeHtml(item.description)}</p>
+        </div>
+        <span class="mk-chip" data-state="${String(item.status || '').toLowerCase()}">${escapeHtml(item.status)}</span>
+      </div>
+      <div class="job-meta">
+        <span>Quote #${item.id}</span>
+        <span>${item.address_text ? escapeHtml(item.address_text) : "No address added"}</span>
+        <span>${new Date(item.created_at).toLocaleString()}</span>
+      </div>
+      <div class="job-meta">
+        ${item.budget_min != null || item.budget_max != null ? `<span>Budget ${item.budget_min != null ? `INR ${Number(item.budget_min).toFixed(0)}` : "Open"} to ${item.budget_max != null ? `INR ${Number(item.budget_max).toFixed(0)}` : "Open"}</span>` : "<span>Budget on request</span>"}
+        <span>${item.preferred_window_start ? `Preferred: ${new Date(item.preferred_window_start).toLocaleString()}` : "Timing flexible"}</span>
+        <span>${item.attachments?.length ? `${item.attachments.length} reference link(s)` : "No references added"}</span>
+      </div>
+      <div class="job-route-actions">
+        <button class="btn ghost" type="button" data-view-id="${item.id}">Open detail</button>
+        ${user?.role === "SEEKER" && item.status !== "BOOKED" && item.status !== "CANCELLED" ? `<button class="btn ghost" type="button" data-cancel-id="${item.id}">Cancel request</button>` : ""}
+      </div>
+      <div class="muted" id="quoteDetail-${item.id}"></div>
+    </article>
+  `).join("");
+  if (window.lucide) window.lucide.createIcons();
+
+  document.querySelectorAll("[data-view-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const responseDetail = await authFetch(`/api/quote-requests/${button.dataset.viewId}`);
+      const target = document.getElementById(`quoteDetail-${button.dataset.viewId}`);
+      if (!responseDetail.ok) {
+        target.innerText = responseDetail.data?.error || "Unable to load quote detail.";
+        return;
+      }
+
+      const detail = responseDetail.data;
+      const quotes = detail.quotes || [];
+      const messages = detail.messages || [];
+      const requestData = detail.quote_request || {};
+
+      target.innerHTML = `
+        <div class="job-meta">
+          <span>${quotes.length} quote option(s)</span>
+          <span>${messages.length} message(s)</span>
+          <span>${detail.targets.length} targeted provider(s)</span>
+        </div>
+        <div class="dashboard-note">
+          <div class="job-meta">
+            <span>${requestData.preferred_window_start ? `Preferred start: ${new Date(requestData.preferred_window_start).toLocaleString()}` : "Flexible timing"}</span>
+            <span>${requestData.preferred_window_end ? `Preferred end: ${new Date(requestData.preferred_window_end).toLocaleString()}` : "No end time set"}</span>
+            <span>${requestData.budget_min != null || requestData.budget_max != null ? `Budget ${requestData.budget_min != null ? `INR ${Number(requestData.budget_min).toFixed(0)}` : "Open"} to ${requestData.budget_max != null ? `INR ${Number(requestData.budget_max).toFixed(0)}` : "Open"}` : "Budget on request"}</span>
+          </div>
+          ${renderAttachmentList(requestData.attachments || [])}
+        </div>
+        ${quotes.map((quote) => `
+          <article class="job-item">
+            <div class="job-header">
+              <div>
+                <h3>Provider #${quote.provider_id}</h3>
+                <p class="muted">${escapeHtml(quote.note || "No note added")}</p>
+              </div>
+              ${statusPill(quote.status)}
+            </div>
+            <div class="job-meta">
+              <span>INR ${Number(quote.total_amount || 0).toFixed(0)}</span>
+              <span>${quote.earliest_available_at ? new Date(quote.earliest_available_at).toLocaleString() : "Time on request"}</span>
+              <span>${quote.estimated_duration_minutes} min</span>
+              <span>${quote.expires_at ? `Expires ${new Date(quote.expires_at).toLocaleString()}` : "Expiry not set"}</span>
+            </div>
+            ${(quote.line_items || []).length ? `<div class="job-meta">${quote.line_items.map((line) => `<span>${escapeHtml(line.label || "Line item")}: INR ${Number(line.amount || 0).toFixed(0)}</span>`).join("")}</div>` : ""}
+            ${user?.role === "SEEKER" && quote.status === "ACTIVE" ? `<div class="job-route-actions"><button class="btn primary" type="button" data-accept-id="${detail.quote_request.id}" data-provider-quote-id="${quote.id}">Accept quote</button></div>` : ""}
+          </article>
+        `).join("")}
+        ${messages.length ? `<div class="job-list">${messages.map((message) => `
+          <article class="job-item">
+            <div class="job-header">
+              <div>
+                <h3>${escapeHtml(message.message_type.replaceAll("_", " "))}</h3>
+                <p class="muted">${escapeHtml(message.body)}</p>
+              </div>
+            </div>
+            ${renderAttachmentList(message.attachments || [])}
+          </article>
+        `).join("")}</div>` : ""}
+        ${user?.role === "PROVIDER" ? `
+          <div class="search-panel">
+            <label>Quote amount</label>
+            <input id="quote-amount-${detail.quote_request.id}" type="number" min="1" step="1" placeholder="1500">
+            <label>Duration in minutes</label>
+            <input id="quote-duration-${detail.quote_request.id}" type="number" min="30" step="30" value="60">
+            <label>Earliest available at</label>
+            <input id="quote-when-${detail.quote_request.id}" type="datetime-local">
+            <label>Line items</label>
+            <textarea id="quote-lines-${detail.quote_request.id}" rows="3" placeholder="Inspection | 500&#10;Parts estimate | 900"></textarea>
+            <label>Note</label>
+            <textarea id="quote-note-${detail.quote_request.id}" rows="3" placeholder="What is included?"></textarea>
+            <label>Reference links</label>
+            <input id="quote-provider-attachments-${detail.quote_request.id}" placeholder="Comma separated URLs">
+            <div class="job-route-actions">
+              <button class="btn primary" type="button" data-send-quote-id="${detail.quote_request.id}">Send quote</button>
+              <button class="btn ghost" type="button" data-needs-info-id="${detail.quote_request.id}">Need info</button>
+              <button class="btn ghost" type="button" data-decline-id="${detail.quote_request.id}">Decline</button>
+            </div>
+          </div>
+        ` : `
+          <div class="search-panel">
+            <label>Message provider</label>
+            <textarea id="quote-message-${detail.quote_request.id}" rows="3" placeholder="Add clarification or a follow-up question"></textarea>
+            <label>Reference links</label>
+            <input id="quote-message-attachments-${detail.quote_request.id}" placeholder="Comma separated URLs">
+            <button class="btn ghost" type="button" data-send-message-id="${detail.quote_request.id}">Send message</button>
+          </div>
+        `}
+      `;
+
+      target.querySelectorAll("[data-accept-id]").forEach((actionButton) => {
+        actionButton.addEventListener("click", async () => {
+          const acceptResponse = await authFetch(`/api/quote-requests/${actionButton.dataset.acceptId}/accept`, {
+            method: "POST",
+            body: JSON.stringify({ provider_quote_id: Number(actionButton.dataset.providerQuoteId) }),
+          });
+          if (!acceptResponse.ok) {
+            showMkToast(acceptResponse.data?.error || "Something went wrong. We're on it.", "error");
+            return;
+          }
+          showMkToast("Quote accepted", "success");
+          loadQuotes();
+        });
+      });
+
+      target.querySelector(`[data-send-quote-id="${detail.quote_request.id}"]`)?.addEventListener("click", async () => {
+        const whenInput = document.getElementById(`quote-when-${detail.quote_request.id}`).value;
+        const whenValue = whenInput ? new Date(whenInput).toISOString().slice(0, 19) : null;
+        const sendResponse = await authFetch(`/api/quote-requests/${detail.quote_request.id}/provider-responses`, {
+          method: "POST",
+          body: JSON.stringify({
+            response_type: "QUOTE_SENT",
+            total_amount: Number(document.getElementById(`quote-amount-${detail.quote_request.id}`).value),
+            estimated_duration_minutes: Number(document.getElementById(`quote-duration-${detail.quote_request.id}`).value),
+            earliest_available_at: whenValue,
+            line_items: parseLineItems(document.getElementById(`quote-lines-${detail.quote_request.id}`).value),
+            note: document.getElementById(`quote-note-${detail.quote_request.id}`).value,
+          }),
+        });
+        if (!sendResponse.ok) {
+          showMkToast(sendResponse.data?.error || "Something went wrong. We're on it.", "error");
+          return;
+        }
+        showMkToast("Quote sent", "success");
+        loadQuotes();
+      });
+
+      target.querySelector(`[data-needs-info-id="${detail.quote_request.id}"]`)?.addEventListener("click", async () => {
+        const sendResponse = await authFetch(`/api/quote-requests/${detail.quote_request.id}/provider-responses`, {
+          method: "POST",
+          body: JSON.stringify({
+            response_type: "NEEDS_INFO",
+            body: "Please share a little more detail before I quote this accurately.",
+            attachments: parseList(document.getElementById(`quote-provider-attachments-${detail.quote_request.id}`)?.value),
+          }),
+        });
+        if (!sendResponse.ok) {
+          showMkToast(sendResponse.data?.error || "Something went wrong. We're on it.", "error");
+          return;
+        }
+        showMkToast("Request for more info sent", "success");
+        loadQuotes();
+      });
+
+      target.querySelector(`[data-decline-id="${detail.quote_request.id}"]`)?.addEventListener("click", async () => {
+        const sendResponse = await authFetch(`/api/quote-requests/${detail.quote_request.id}/provider-responses`, {
+          method: "POST",
+          body: JSON.stringify({ response_type: "DECLINED" }),
+        });
+        if (!sendResponse.ok) {
+          showMkToast(sendResponse.data?.error || "Something went wrong. We're on it.", "error");
+          return;
+        }
+        showMkToast("Quote request declined", "success");
+        loadQuotes();
+      });
+
+      target.querySelector(`[data-send-message-id="${detail.quote_request.id}"]`)?.addEventListener("click", async () => {
+        const messageValue = document.getElementById(`quote-message-${detail.quote_request.id}`).value;
+        const sendResponse = await authFetch(`/api/quote-requests/${detail.quote_request.id}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            body: messageValue,
+            attachments: parseList(document.getElementById(`quote-message-attachments-${detail.quote_request.id}`)?.value),
+          }),
+        });
+        if (!sendResponse.ok) {
+          showMkToast(sendResponse.data?.error || "Something went wrong. We're on it.", "error");
+          return;
+        }
+        showMkToast("Message sent", "success");
+        loadQuotes();
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-cancel-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const cancelResponse = await authFetch(`/api/quote-requests/${button.dataset.cancelId}/cancel`, {
+        method: "POST",
+      });
+      if (!cancelResponse.ok) {
+        showMkToast(cancelResponse.data?.error || "Something went wrong. We're on it.", "error");
+        return;
+      }
+      showMkToast("Quote request cancelled", "success");
+      loadQuotes();
+    });
+  });
+}
+
+if (pageParams.get("skill_id")) {
+  document.getElementById("quoteSkillId").value = pageParams.get("skill_id");
+}
+if (pageParams.get("provider_id")) {
+  document.getElementById("quoteProviderIds").value = pageParams.get("provider_id");
+}
+if (pageParams.get("service_title")) {
+  document.getElementById("quoteServiceTitle").value = pageParams.get("service_title");
+}
+
+document.getElementById("createQuoteBtn").addEventListener("click", async () => {
+  setCreateStatus("Creating your quote request...");
+
+  const providerIds = document.getElementById("quoteProviderIds").value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => Number(item));
+
+  const payload = {
+    skill_id: document.getElementById("quoteSkillId").value
+      ? Number(document.getElementById("quoteSkillId").value)
+      : null,
+    provider_ids: providerIds,
+    service_title: document.getElementById("quoteServiceTitle").value,
+    description: document.getElementById("quoteDescription").value,
+    address_text: document.getElementById("quoteAddress").value,
+    budget_min: document.getElementById("quoteBudgetMin").value || null,
+    budget_max: document.getElementById("quoteBudgetMax").value || null,
+    preferred_window_start: parseDateValue(document.getElementById("quoteWindowStart").value),
+    preferred_window_end: parseDateValue(document.getElementById("quoteWindowEnd").value),
+    attachments: parseList(document.getElementById("quoteAttachments").value),
+  };
+
+  const response = await authFetch("/api/quote-requests", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    setCreateStatus(response.data?.error || "Unable to create quote request.", "error");
+    showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+    return;
+  }
+  setCreateStatus("Quote request created.", "success");
+  showMkToast("Quote request saved", "success");
+  document.getElementById("quoteServiceTitle").value = "";
+  document.getElementById("quoteDescription").value = "";
+  document.getElementById("quoteAddress").value = "";
+  document.getElementById("quoteBudgetMin").value = "";
+  document.getElementById("quoteBudgetMax").value = "";
+  document.getElementById("quoteWindowStart").value = "";
+  document.getElementById("quoteWindowEnd").value = "";
+  document.getElementById("quoteAttachments").value = "";
+  loadQuotes();
+});
+
+loadQuotes();
+</script>
+{% endblock %}

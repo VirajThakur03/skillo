@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Membership Plans | Sklio Premium{% endblock %}
+
+{% block content %}
+<section class="dashboard-shell mk-fade-in">
+    <!-- Hero Stats -->
+    <div class="card dashboard-hero" style="background: linear-gradient(135deg, #4338ca 0%, #1e1b4b 100%); color: white;">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow" style="color: #c7d2fe;">SKLIO PRO MEMBERSHIP</p>
+                <h1 style="color: white; margin-bottom: 8px;">Elevate Your Service</h1>
+                <p class="muted" style="color: #e0e7ff;">Priority placement, lower commission fees, and exclusive business tools.</p>
+            </div>
+        </div>
+        
+        <div id="activeSubContainer" style="margin-top: 32px; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 12px; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <p class="mk-label-upper" style="color: #c7d2fe; font-size: 10px; margin-bottom: 4px;">CURRENT PLAN</p>
+                    <h3 id="activePlanName" style="margin: 0; color: white;">Pro Monthly</h3>
+                    <p id="expiryInfo" class="muted" style="color: #c7d2fe; font-size: 12px;"></p>
+                </div>
+                <button class="btn ghost btn-sm" id="btnCancelSub" style="color: white; border-color: rgba(255,255,255,0.3);">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Available Plans -->
+    <div style="margin-top: 40px;">
+        <div class="section-head">
+            <div>
+                <p class="eyebrow">CHOOSE A PLAN</p>
+                <h2>Membership Tiers</h2>
+            </div>
+        </div>
+
+        <div id="plansGrid" class="plans-grid">
+            <!-- Loaded via JS -->
+            <div class="mk-empty-state"><p class="muted">Loading plans...</p></div>
+        </div>
+    </div>
+
+    <!-- Features Table -->
+    <div class="card" style="margin-top: 48px; background: #f8fafc; border: none;">
+        <h3 class="mk-heading" style="text-align: center;">Why go Pro?</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-top: 24px;">
+            <div class="feature-item">
+                <div class="icon-box">⭐</div>
+                <h4>Priority Support</h4>
+                <p class="muted">Get help in under 15 minutes from our dedicated success team.</p>
+            </div>
+            <div class="feature-item">
+                <div class="icon-box">📉</div>
+                <h4>Lower Commissions</h4>
+                <p class="muted">Keep more of what you earn. Pro members pay only 7% commission instead of 10%.</p>
+            </div>
+            <div class="feature-item">
+                <div class="icon-box">🚀</div>
+                <h4>Profile Boost</h4>
+                <p class="muted">Appear at the top of search results for your skills in your area.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<style>
+.dashboard-shell { max-width: 1000px; margin: 0 auto; padding: 20px; }
+.card { border-radius: 16px; padding: 24px; border: 1px solid #e2e8f0; background: white; }
+.dashboard-hero { border: none; }
+.section-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.05em; margin: 0 0 8px 0; }
+.muted { font-size: 14px; margin: 0; }
+.plans-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.plan-card { border-radius: 20px; padding: 32px; background: white; border: 2px solid #f1f5f9; transition: transform 0.2s, border-color 0.2s; position: relative; }
+.plan-card.popular { border-color: #4338ca; }
+.plan-card:hover { transform: translateY(-4px); }
+.popular-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #4338ca; color: white; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.feature-item { text-align: center; }
+.icon-box { font-size: 32px; margin-bottom: 12px; }
+.feature-list { list-style: none; padding: 0; margin: 24px 0; }
+.feature-list li { margin-bottom: 12px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.feature-list li::before { content: "✓"; color: #10b981; font-weight: bold; }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, getCurrentUser, showMkToast } from "/static/js/main.js";
+
+const plansGrid = document.getElementById("plansGrid");
+const activeSubContainer = document.getElementById("activeSubContainer");
+
+async function loadMembership() {
+    const res = await authFetch("/api/subscriptions/my");
+    if (!res.ok) return;
+
+    if (res.data.active) {
+        activeSubContainer.style.display = "block";
+        document.getElementById("activePlanName").textContent = res.data.subscription.plan_name;
+        const expiry = new Date(res.data.subscription.expires_at);
+        document.getElementById("expiryInfo").textContent = `Active until ${expiry.toLocaleDateString()}`;
+        
+        if (res.data.subscription.status === 'CANCELLED') {
+            document.getElementById("btnCancelSub").style.display = "none";
+            document.getElementById("expiryInfo").textContent += " (Cancelled)";
+        }
+    } else {
+        activeSubContainer.style.display = "none";
+    }
+}
+
+async function loadPlans() {
+    const res = await authFetch("/api/subscriptions/plans");
+    if (!res.ok) {
+        plansGrid.innerHTML = `<p class="muted">Unable to load plans.</p>`;
+        return;
+    }
+
+    const { plans } = res.data;
+    if (!plans || plans.length === 0) {
+        plansGrid.innerHTML = `<p class="muted">No plans available at the moment.</p>`;
+        return;
+    }
+
+    plansGrid.innerHTML = plans.map(plan => `
+        <article class="plan-card ${plan.slug === 'pro-monthly' ? 'popular' : ''}">
+            ${plan.slug === 'pro-monthly' ? '<div class="popular-badge">MOST POPULAR</div>' : ''}
+            <h3 style="margin: 0 0 8px 0;">${plan.name}</h3>
+            <div style="display: flex; align-items: baseline; gap: 4px;">
+                <span style="font-size: 32px; font-weight: 700;">₹${Number(plan.price).toFixed(0)}</span>
+                <span class="muted">/ ${plan.duration_days} days</span>
+            </div>
+            <p class="muted" style="margin-top: 12px;">${plan.description || ''}</p>
+            <ul class="feature-list">
+                ${(plan.features || []).map(f => `<li>${f}</li>`).join('')}
+            </ul>
+            <button class="btn ${plan.slug === 'pro-monthly' ? 'primary' : 'ghost'} btn-subscribe" 
+                    data-id="${plan.id}" 
+                    style="width: 100%; margin-top: 8px;">
+                Subscribe Now
+            </button>
+        </article>
+    `).join('');
+
+    document.querySelectorAll(".btn-subscribe").forEach(btn => {
+        btn.onclick = () => handleSubscribe(btn.dataset.id);
+    });
+}
+
+async function handleSubscribe(planId) {
+    // Check role - only providers
+    const currentUser = await getCurrentUser();
+    if (!currentUser || currentUser.role !== 'PROVIDER') {
+        showMkToast("Only providers can subscribe to membership plans.", "error");
+        return;
+    }
+
+    if (!confirm("This will debit the plan price from your wallet. Continue?")) return;
+
+    const res = await authFetch("/api/subscriptions/subscribe", {
+        method: "POST",
+        body: JSON.stringify({ plan_id: planId })
+    });
+
+    if (res.ok) {
+        showMkToast("Welcome to Sklio Pro!", "success");
+        loadMembership();
+    } else {
+        showMkToast(res.data?.error || "Subscription failed", "error");
+        if (res.data?.error?.includes("wallet")) {
+            setTimeout(() => window.location.href = "/wallet", 2000);
+        }
+    }
+}
+
+document.getElementById("btnCancelSub").onclick = async () => {
+    if (!confirm("Are you sure? You'll lose Pro benefits after the current period ends.")) return;
+    
+    const res = await authFetch("/api/subscriptions/cancel", { method: "POST" });
+    if (res.ok) {
+        showMkToast("Subscription cancelled", "success");
+        loadMembership();
+    }
+};
+
+// Initial Load
+loadMembership();
+loadPlans();
+</script>
+{% endblock %}

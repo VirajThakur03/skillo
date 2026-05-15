@@ -1,33 +1,73 @@
 {% extends "base.html" %}
 
+{% block title %}Track Booking | Sklio{% endblock %}
 {% block content %}
   <!-- ================= TRACKING CARD ================= -->
   <div class="card glass">
-    <h2>Track your worker</h2>
-    <p class="muted">Booking #{{ booking_id }}</p>
+    <h2 class="mk-display-md">Track your worker</h2>
+    <p class="mk-body-sm">Booking #{{ booking_id }}</p>
+    <div class="mk-booking-timeline" style="margin:8px 0 16px 0;" id="bookingTimeline">
+      <div class="mk-step">
+        <div class="mk-step-circle"><i data-lucide="file-text" style="width:14px;height:14px;"></i></div>
+        <div class="mk-step-label">Requested</div>
+      </div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="check-circle" style="width:14px;height:14px;"></i></div><div class="mk-step-label">Confirmed</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="navigation" style="width:14px;height:14px;"></i></div><div class="mk-step-label">En route</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="map-pin" style="width:14px;height:14px;"></i></div><div class="mk-step-label">Arrived</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="wrench" style="width:14px;height:14px;"></i></div><div class="mk-step-label">In progress</div></div>
+      <div class="mk-step-connector"></div>
+      <div class="mk-step"><div class="mk-step-circle"><i data-lucide="star" style="width:14px;height:14px;"></i></div><div class="mk-step-label">Completed</div></div>
+    </div>
 
     <div id="map" style="height:380px; border-radius:12px; overflow:hidden;"></div>
 
-    <p id="status" class="muted" style="margin-top:8px;">
+    <p id="status" class="mk-body-sm" style="margin-top:8px;">
       Waiting for worker location…
     </p>
+
+    <div class="card mk-card" style="margin-top:16px;">
+      <h3 class="mk-heading">Booking activity</h3>
+      <div id="bookingEventFeed" style="margin-top:10px;"></div>
+    </div>
 
     <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn ghost" type="button" onclick="recenterOnWorker()">
         Recenter on worker
       </button>
+      <button class="btn danger" type="button" id="cancelBtn" style="display:none;" onclick="openCancelModal()">
+        Cancel booking
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= CANCEL MODAL ================= -->
+  <div id="cancelModal" class="mk-modal-overlay" style="display:none;">
+    <div class="mk-modal card">
+      <h3 class="mk-heading">Cancel booking?</h3>
+      <p class="mk-body-sm">Please select a reason for cancellation:</p>
+      <select id="cancelReason" style="width:100%; margin-top:12px;">
+        <option value="Too expensive">Too expensive</option>
+        <option value="Changed mind">Changed mind</option>
+        <option value="Found another provider">Found another provider</option>
+        <option value="Emergency">Emergency</option>
+        <option value="Other">Other</option>
+      </select>
+      <div style="margin-top:20px; display:flex; gap:12px; justify-content:flex-end;">
+        <button class="btn ghost" onclick="closeCancelModal()">Go back</button>
+        <button class="btn danger" id="confirmCancelBtn" onclick="confirmCancellation()">Confirm cancellation</button>
+      </div>
     </div>
   </div>
 
   <!-- ================= REVIEW CARD (SEEKER ONLY) ================= -->
-  <div
-    id="reviewBox"
-    class="card glass"
-    style="margin-top:16px; display:none;"
-  >
-    <h3>⭐ Rate your experience</h3>
+  <div id="reviewBox" class="card glass mk-card" style="margin-top:16px; display:none;">
+    <h3 class="mk-heading">Rate your experience</h3>
 
-    <div id="starRow" style="font-size:26px; cursor:pointer;">
+    <div id="starRow" style="font-size:26px; cursor:pointer; position:relative; z-index:10;">
       <span onclick="setRating(1)">☆</span>
       <span onclick="setRating(2)">☆</span>
       <span onclick="setRating(3)">☆</span>
@@ -45,6 +85,7 @@
       Submit Review
     </button>
 
+    <button class="btn ghost" style="margin-top:8px;" onclick="dismissReviewBox()">Not now</button>
     <p id="reviewMsg" class="muted" style="margin-top:8px;"></p>
   </div>
 {% endblock %}
@@ -61,13 +102,17 @@
     crossorigin=""
   ></script>
 
-  <script>
+  <script type="module">
+    import { showMkToast, getToken } from "/static/js/main.js";
+
     const BOOKING_ID = {{ booking_id }};
     const ROOM = "booking_" + BOOKING_ID;
-    const token = localStorage.getItem("sklio_access_token") || null;
+    const token = getToken();
 
     let map, marker, lastLatLng = null;
     let ratingValue = 0;
+    const reviewDismissKey = `mk_review_dismissed_${BOOKING_ID}`;
+    const reviewSubmittedKey = `mk_review_submitted_${BOOKING_ID}`;
 
     /* ================= MAP ================= */
 
@@ -123,14 +168,14 @@
 
     async function submitReview(){
       if (ratingValue < 1){
-        alert("Please select a rating");
+        showMkToast("Please select a rating.", "error");
         return;
       }
 
       const comment =
         document.getElementById("reviewComment").value || "";
 
-      const res = await authFetch(`/api/bookings/${BOOKING_ID}/review`, {
+      const res = await authedFetch(`/api/bookings/${BOOKING_ID}/review`, {
         method: "POST",
         body: JSON.stringify({
           rating: ratingValue,
@@ -141,6 +186,7 @@
       const msg = document.getElementById("reviewMsg");
 
       if (res.ok){
+        localStorage.setItem(reviewSubmittedKey, "1");
         msg.innerText = "✅ Review submitted successfully!";
         msg.style.color = "green";
         document.getElementById("reviewBox").style.display = "none";
@@ -150,40 +196,173 @@
       }
     }
 
-    async function checkReviewEligibility(){
-      const res = await authFetch(`/api/bookings/${BOOKING_ID}`, {
+    function renderTimeline(status) {
+      const container = document.getElementById("bookingTimeline");
+      if (!container) return;
+      const steps = container.querySelectorAll(".mk-step");
+      const connectors = container.querySelectorAll(".mk-step-connector");
+      
+      let targetIdx = 0;
+      const s = String(status).toUpperCase();
+      if (s === "PENDING") targetIdx = 0;
+      else if (s === "CONFIRMED") targetIdx = 1;
+      else if (s === "IN_PROGRESS") targetIdx = 2; // Approximates en route / arrived too for now
+      else if (s === "COMPLETED") targetIdx = 5;
+
+      steps.forEach((step, idx) => {
+        step.classList.remove("is-complete", "is-active");
+        const circle = step.querySelector(".mk-step-circle");
+        if (circle) circle.classList.remove("mk-step-active");
+
+        if (idx < targetIdx) {
+          step.classList.add("is-complete");
+        } else if (idx === targetIdx) {
+          step.classList.add("is-active");
+          if (circle) circle.classList.add("mk-step-active");
+        }
+      });
+
+      connectors.forEach((conn, idx) => {
+        conn.classList.remove("is-complete");
+        if (idx < targetIdx) {
+          conn.classList.add("is-complete");
+        }
+      });
+    }
+
+    function renderEventFeed(events) {
+      const host = document.getElementById("bookingEventFeed");
+      if (!host) return;
+      if (!events || events.length === 0) {
+        host.innerHTML = "<p class='mk-body-sm muted'>Timeline will appear as your booking moves forward.</p>";
+        return;
+      }
+      host.innerHTML = events.map((event) => `
+        <div class="mk-card" style="padding:10px;margin-bottom:10px;">
+          <div class="mk-heading">${event.summary}</div>
+          <div class="mk-body-sm muted">${new Date(event.created_at).toLocaleString()}</div>
+        </div>
+      `).join("");
+    }
+
+    async function loadBookingTimeline() {
+      const response = await authedFetch(`/api/bookings/${BOOKING_ID}/timeline`, {
+        method: "GET"
+      });
+      if (response.ok) {
+        renderEventFeed(response.data.events || []);
+      }
+    }
+
+    async function checkBookingStatus(){
+      const res = await authedFetch(`/api/bookings/${BOOKING_ID}`, {
         method: "GET"
       });
 
-      if (res.ok && res.data.status === "completed"){
-        document.getElementById("reviewBox").style.display = "block";
+      if (res.ok){
+        const { status } = res.data;
+        const sUpper = String(status).toUpperCase();
+        
+        renderTimeline(sUpper);
+
+        // Show cancel button only for PENDING or CONFIRMED
+        const cancelBtn = document.getElementById("cancelBtn");
+        if (["PENDING", "CONFIRMED"].includes(sUpper)) {
+            cancelBtn.style.display = "inline-block";
+        } else {
+            cancelBtn.style.display = "none";
+        }
+
+        if (sUpper === "COMPLETED" && !localStorage.getItem(reviewDismissKey) && !localStorage.getItem(reviewSubmittedKey)){
+          setTimeout(() => {
+            if (!localStorage.getItem(reviewDismissKey) && !localStorage.getItem(reviewSubmittedKey)) {
+              document.getElementById("reviewBox").style.display = "block";
+            }
+          }, 5000); // reduced to 5s for demo
+        }
+        loadBookingTimeline();
       }
+    }
+
+    window.openCancelModal = function() {
+        document.getElementById("cancelModal").style.display = "flex";
+    };
+
+    window.closeCancelModal = function() {
+        document.getElementById("cancelModal").style.display = "none";
+    };
+
+    window.confirmCancellation = async function() {
+        const reason = document.getElementById("cancelReason").value;
+        const confirmBtn = document.getElementById("confirmCancelBtn");
+        confirmBtn.disabled = true;
+
+        const res = await authedFetch(`/api/bookings/${BOOKING_ID}/cancel`, {
+            method: "POST",
+            body: JSON.stringify({ reason_code: reason })
+        });
+
+        confirmBtn.disabled = false;
+        if (res.ok) {
+            showMkToast("Booking cancelled successfully", "success");
+            location.reload();
+        } else {
+            showMkToast(res.data?.error || "Failed to cancel booking", "error");
+        }
+    }
+
+    function dismissReviewBox() {
+      localStorage.setItem(reviewDismissKey, "1");
+      document.getElementById("reviewBox").style.display = "none";
+    }
+
+    async function authedFetch(url, options = {}) {
+      const headers = { ...(options.headers || {}) };
+      if (!headers["Content-Type"] && options.body && !(options.body instanceof FormData)) {
+        headers["Content-Type"] = "application/json";
+      }
+      if (token) {
+        headers.Authorization = "Bearer " + token;
+      }
+      const res = await fetch(url, { ...options, headers });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
     }
 
     /* ================= SOCKET ================= */
 
-    document.addEventListener("DOMContentLoaded", () => {
-      initMap();
-      checkReviewEligibility();
+    initMap();
+    checkBookingStatus();
 
-      const socket = io({ auth: { token } });
-
-      socket.on("connect", () => {
-        socket.emit("join", { room: ROOM });
-      });
-
-      socket.on("disconnect", () => {
-        setStatus("Disconnected from server. Waiting for reconnection…");
-      });
-
-      socket.on("worker_location_update", (data) => {
-        if (data.booking_id !== BOOKING_ID) return;
-
-        const { latitude, longitude, last_seen_at } = data;
-        if (typeof latitude !== "number" || typeof longitude !== "number") return;
-
-        updateWorkerMarker(latitude, longitude, last_seen_at);
-      });
+    const socket = io({ 
+      auth: { token },
+      transports: ["websocket", "polling"] 
     });
+
+    socket.on("connect", () => {
+      socket.emit("join", { room: ROOM });
+    });
+
+    socket.on("disconnect", () => {
+      setStatus("Disconnected from server. Waiting for reconnection…");
+    });
+
+    socket.on("connect_error", (err) => {
+      setStatus("Connection error: " + err.message);
+    });
+
+    socket.on("worker_location_update", (data) => {
+      if (data.booking_id !== BOOKING_ID) return;
+
+      const { latitude, longitude, last_seen_at } = data;
+      if (typeof latitude !== "number" || typeof longitude !== "number") return;
+
+      updateWorkerMarker(latitude, longitude, last_seen_at);
+    });
+
+    window.recenterOnWorker = recenterOnWorker;
+    window.setRating = setRating;
+    window.submitReview = submitReview;
+    window.dismissReviewBox = dismissReviewBox;
   </script>
 {% endblock %}

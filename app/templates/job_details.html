@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}Job Details | Sklio{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <nav style="margin-bottom: 24px;">
+        <a href="/jobs" class="btn ghost small" style="padding-left:0;">
+            <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+            Back to Job Board
+        </a>
+    </nav>
+
+    <div id="jobDetails">
+        <div class="mk-card mk-skeleton" style="height:300px;"></div>
+    </div>
+    
+    <div id="proposalsSection" style="margin-top:32px; display:none;">
+        <h3 class="mk-heading" style="margin-bottom:16px;">Proposals</h3>
+        <div id="proposalList" class="grid">
+            <p class="mk-body-sm muted">No proposals yet.</p>
+        </div>
+    </div>
+
+    <div id="applySection" style="margin-top:32px; display:none;">
+        <div class="card mk-card">
+            <h3 class="mk-heading">Submit a Proposal</h3>
+            <p class="mk-body-sm muted">Submit your quote and message to the seeker. If selected, a booking will be created automatically.</p>
+            <form id="proposalForm" style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+                <div class="form-group">
+                    <label class="mk-label-upper" for="quotedAmount">Quoted Amount (INR)</label>
+                    <input type="number" id="quotedAmount" class="form-control" placeholder="1000" required>
+                </div>
+                <div class="form-group">
+                    <label class="mk-label-upper" for="coverMessage">Message to Seeker</label>
+                    <textarea id="coverMessage" class="form-control" rows="4" placeholder="Explain why you're a good fit for this job..."></textarea>
+                </div>
+                <button type="submit" class="btn primary" id="submitProposalBtn">Submit Proposal</button>
+            </form>
+        </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, showMkToast } from "/static/js/main.js";
+
+const jobId = {{ job_id }};
+const jobDetails = document.getElementById("jobDetails");
+const proposalsSection = document.getElementById("proposalsSection");
+const proposalList = document.getElementById("proposalList");
+const applySection = document.getElementById("applySection");
+const proposalForm = document.getElementById("proposalForm");
+
+let currentJob = null;
+let currentUser = null;
+
+async function init() {
+    try {
+        const userRes = await authFetch("/api/auth/me");
+        if (userRes.ok) {
+            currentUser = userRes.data;
+        }
+        
+        await fetchJobDetails();
+    } catch (err) {
+        console.error("Init failed:", err);
+        jobDetails.innerHTML = `<div class="card mk-card"><p class="mk-body-sm error">Failed to initialize. Please log in.</p></div>`;
+    }
+}
+
+async function fetchJobDetails() {
+    try {
+        const res = await authFetch(`/api/jobs/${jobId}`);
+        if (!res.ok) throw new Error("Failed to load job");
+        currentJob = res.data;
+        renderJobDetails();
+        
+        if (currentUser) {
+            if (currentJob.seeker_id === currentUser.id) {
+                // Owner: show proposals
+                proposalsSection.style.display = 'block';
+                fetchProposals();
+            } else {
+                // Non-owner: check if provider
+                fetchProposals(); 
+            }
+        }
+    } catch (err) {
+        jobDetails.innerHTML = `<div class="card mk-card"><p class="mk-body-sm error">Failed to load job details. ${err.message}</p></div>`;
+    }
+}
+
+async function fetchProposals() {
+    try {
+        const res = await authFetch(`/api/jobs/${jobId}/proposals`);
+        if (res.ok) {
+            const proposals = res.data;
+            renderProposals(proposals);
+            
+            if (currentUser && currentUser.role === 'PROVIDER') {
+                const myProposal = proposals.find(p => p.provider_id === currentUser.id);
+                if (!myProposal && currentJob.status === 'OPEN') {
+                    applySection.style.display = 'block';
+                } else if (myProposal) {
+                    proposalsSection.style.display = 'block';
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Failed to fetch proposals:", err);
+    }
+}
+
+function renderJobDetails() {
+    jobDetails.innerHTML = `
+        <div class="mk-card mk-stagger-child">
+            <div class="badge-row" style="margin-bottom:16px;">
+                <span class="chip" data-state="${currentJob.status.toLowerCase()}">${currentJob.status}</span>
+                <span class="chip">ID: #${currentJob.id}</span>
+            </div>
+            <h2 class="mk-display-lg">${escapeHtml(currentJob.title)}</h2>
+            <p class="mk-body" style="margin-top:16px; white-space:pre-wrap; border-left:4px solid var(--brand-100); padding-left:16px;">${escapeHtml(currentJob.description || "No description provided.")}</p>
+            
+            <div class="grid grid-2" style="margin-top:24px; border-top:1px solid var(--border); padding-top:24px;">
+                <div class="mk-card-stat">
+                    <span class="mk-label-upper">Budget Range</span>
+                    <p class="mk-display-md">INR ${currentJob.budget_min || '0'} - ${currentJob.budget_max || 'Any'}</p>
+                </div>
+                <div class="mk-card-stat">
+                    <span class="mk-label-upper">Posted On</span>
+                    <p class="mk-display-md">${new Date(currentJob.created_at).toLocaleDateString()}</p>
+                </div>
+            </div>
+        </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function renderProposals(proposals) {
+    if (!proposals || proposals.length === 0) {
+        proposalList.innerHTML = `<p class="mk-body-sm muted">No proposals yet.</p>`;
+        return;
+    }
+
+    proposalList.innerHTML = proposals.map(p => `
+        <div class="mk-card ${p.status === 'SELECTED' ? 'mk-booking-accent' : ''}" style="padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:start; flex-wrap:wrap; gap:16px;">
+                <div style="flex:1;">
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                        <div class="avatar">${p.provider_name ? p.provider_name.charAt(0) : 'P'}</div>
+                        <div>
+                            <h4 class="mk-heading" style="margin:0;">${escapeHtml(p.provider_name || "Provider")}</h4>
+                            <span class="mk-badge" data-type="verified">Verified Provider</span>
+                        </div>
+                    </div>
+                    <p class="mk-body-sm" style="margin-bottom:12px; font-style:italic;">"${escapeHtml(p.cover_message || "No message provided.")}"</p>
+                    <div class="badge-row">
+                        <span class="chip success">Quote: INR ${p.quoted_amount}</span>
+                        <span class="chip" data-state="${p.status.toLowerCase()}">${p.status}</span>
+                    </div>
+                </div>
+                <div class="actions">
+                    ${(currentJob.seeker_id === currentUser.id && currentJob.status === 'OPEN') ? `
+                        <button class="btn primary select-btn" data-id="${p.id}">Select Provider</button>
+                    ` : ''}
+                    ${(currentJob.seeker_id === currentUser.id && currentJob.status === 'PROVIDER_FOUND' && p.status === 'SELECTED') ? `
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <span class="chip success">Current Selection</span>
+                            <button class="btn ghost cancel-btn" style="color:var(--danger-600); border-color:var(--danger-600);">Cancel Selection</button>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `).join("");
+
+    document.querySelectorAll(".select-btn").forEach(btn => {
+        btn.onclick = () => handleSelect(btn.dataset.id);
+    });
+    
+    const cancelBtn = document.querySelector(".cancel-btn");
+    if (cancelBtn) {
+        cancelBtn.onclick = handleCancel;
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+}
+
+async function handleSelect(proposalId) {
+    if (!confirm("Are you sure you want to select this provider? A booking will be created and other proposals will be rejected.")) return;
+    
+    try {
+        const res = await authFetch(`/api/jobs/${jobId}/select-provider`, {
+            method: "POST",
+            body: JSON.stringify({ proposal_id: proposalId })
+        });
+        if (res.ok) {
+            showMkToast("Provider selected! Booking created.", "success");
+            fetchJobDetails();
+        } else {
+            showMkToast(res.data.error || "Failed to select provider", "error");
+        }
+    } catch (err) {
+        showMkToast("An error occurred.", "error");
+    }
+}
+
+async function handleCancel() {
+    if (!confirm("Cancel this selection? The job will be reopened.")) return;
+    
+    try {
+        const res = await authFetch(`/api/jobs/${jobId}/cancel-selected-provider`, {
+            method: "POST"
+        });
+        if (res.ok) {
+            showMkToast("Selection cancelled. Job is open again.", "success");
+            fetchJobDetails();
+        } else {
+            showMkToast(res.data.error || "Failed to cancel selection", "error");
+        }
+    } catch (err) {
+        showMkToast("An error occurred.", "error");
+    }
+}
+
+if (proposalForm) {
+    proposalForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const submitBtn = document.getElementById("submitProposalBtn");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Submitting...";
+
+        const data = {
+            quoted_amount: document.getElementById("quotedAmount").value,
+            cover_message: document.getElementById("coverMessage").value
+        };
+
+        try {
+            const res = await authFetch(`/api/jobs/${jobId}/proposals`, {
+                method: "POST",
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                showMkToast("Proposal submitted successfully!", "success");
+                applySection.style.display = 'none';
+                fetchProposals();
+            } else {
+                showMkToast(res.data.error || "Failed to submit proposal", "error");
+            }
+        } catch (err) {
+            showMkToast("An error occurred.", "error");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Submit Proposal";
+        }
+    });
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+init();
+</script>
+{% endblock %}

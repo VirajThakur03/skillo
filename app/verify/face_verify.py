@@ -1,14 +1,24 @@
 # app/verify/face_verify.py
 
-import cv2
-import numpy as np
 import os
+
+try:
+    import cv2
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    cv2 = None
+
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover - depends on runtime env
+    np = None
 
 # =========================
 # FACE DETECTOR (HAAR)
 # =========================
-FACE_CASCADE = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+FACE_CASCADE = (
+    cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    if cv2 is not None
+    else None
 )
 
 # =========================
@@ -21,6 +31,8 @@ def create_recognizer():
     - lighting
     - small age changes
     """
+    if cv2 is None or not hasattr(cv2, "face"):
+        return None
     return cv2.face.LBPHFaceRecognizer_create(
         radius=2,
         neighbors=8,
@@ -35,6 +47,8 @@ def _detect_face(gray):
     """
     Detect face and return BEARD-SAFE crop (upper 65%)
     """
+    if FACE_CASCADE is None:
+        return None
     faces = FACE_CASCADE.detectMultiScale(
         gray,
         scaleFactor=1.1,
@@ -60,6 +74,8 @@ def extract_face_from_image(image_path):
     """
     if not image_path or not os.path.exists(image_path):
         return None
+    if cv2 is None:
+        return None
 
     img = cv2.imread(image_path)
     if img is None:
@@ -75,6 +91,8 @@ def extract_face_from_image(image_path):
 # DOCUMENT FACE (SAVE ONCE)
 # =========================
 def extract_and_save_document_face(doc_path, output_path):
+    if cv2 is None:
+        return False
     img = cv2.imread(doc_path)
     if img is None:
         return False
@@ -94,6 +112,8 @@ def extract_and_save_document_face(doc_path, output_path):
 def load_document_face(face_path):
     if not face_path or not os.path.exists(face_path):
         return None
+    if cv2 is None:
+        return None
 
     return cv2.imread(face_path, cv2.IMREAD_GRAYSCALE)
 
@@ -101,7 +121,12 @@ def load_document_face(face_path):
 # VIDEO FACE EXTRACTION
 # =========================
 def extract_video_faces(video_path, max_faces=20, max_frames=120):
+    if cv2 is None:
+        return None
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        cap.release()
+        return None
     faces = []
     frame_count = 0
 
@@ -132,6 +157,8 @@ def faces_match(reference_face, video_faces, threshold=85, min_matches=3):
         return False
 
     recognizer = create_recognizer()
+    if recognizer is None or np is None:
+        return False
     recognizer.train([reference_face], np.array([0]))
 
     good_matches = 0

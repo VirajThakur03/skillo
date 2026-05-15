@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Disputes | Sklio{% endblock %}
+{% block content %}
+<section class="dashboard-shell">
+  <div class="card dashboard-hero">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Disputes</p>
+        <h1>Report booking issues, track review status, and keep refund notes visible.</h1>
+        <p class="muted">This workflow covers the dispute and refund slice of the PRD for seekers, providers, and admins from one shared surface.</p>
+      </div>
+      <a class="btn ghost" href="/my-bookings">Back to bookings</a>
+    </div>
+  </div>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Open issue</p>
+        <h2>Create a dispute</h2>
+      </div>
+      <button class="btn primary" id="createDisputeBtn" type="button">Submit dispute</button>
+    </div>
+    <div class="form-stack">
+      <label for="disputeBookingId">Booking ID</label>
+      <input id="disputeBookingId" type="number" min="1">
+
+      <label for="disputeCategory">Category</label>
+      <select id="disputeCategory">
+        <option value="QUALITY">Quality issue</option>
+        <option value="NO_SHOW">No show</option>
+        <option value="REFUND">Refund request</option>
+        <option value="SAFETY">Safety concern</option>
+        <option value="OTHER">Other</option>
+      </select>
+
+      <label for="disputeDescription">What happened?</label>
+      <textarea id="disputeDescription" rows="4" placeholder="Describe the issue clearly so support can act faster."></textarea>
+    </div>
+  </section>
+
+  <section class="card dashboard-section">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Case log</p>
+        <h2>Existing disputes</h2>
+      </div>
+    </div>
+    <div id="disputeList" class="job-list"></div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { authFetch, getCurrentUser, showMkToast } from "/static/js/main.js";
+
+const disputeBookingId = document.getElementById("disputeBookingId");
+const disputeCategory = document.getElementById("disputeCategory");
+const disputeDescription = document.getElementById("disputeDescription");
+const disputeList = document.getElementById("disputeList");
+const bookingIdFromUrl = new URLSearchParams(window.location.search).get("booking_id");
+
+if (bookingIdFromUrl) {
+  disputeBookingId.value = bookingIdFromUrl;
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+async function loadDisputes() {
+  const user = await getCurrentUser();
+  const response = await authFetch("/api/ops/disputes");
+  if (!response.ok) {
+    disputeList.innerHTML = `<div class="empty-state"><p class="muted">${escapeHtml(response.data?.error || "Unable to load disputes.")}</p></div>`;
+    return;
+  }
+
+  const items = response.data.items || [];
+  if (!items.length) {
+    disputeList.innerHTML = `<div class="empty-state"><p class="muted">No disputes yet.</p></div>`;
+    return;
+  }
+
+  disputeList.innerHTML = items.map((item) => `
+    <article class="job-item">
+      <div class="job-header">
+        <div>
+          <h3>Booking #${item.booking_id}</h3>
+          <p class="muted">${escapeHtml(item.category)}: ${escapeHtml(item.description)}</p>
+        </div>
+        <span class="status-pill status-${String(item.status).toLowerCase()}">${escapeHtml(item.status)}</span>
+      </div>
+      <div class="job-meta">
+        <span>Opened by ${item.opened_by_user_id}</span>
+        <span>Refund request INR ${Number(item.refund_amount || 0).toFixed(0)}</span>
+        <span>${new Date(item.created_at).toLocaleString()}</span>
+      </div>
+      ${item.resolution_notes ? `<p class="muted">Resolution notes: ${escapeHtml(item.resolution_notes)}</p>` : ""}
+      ${user?.is_admin ? `
+        <div class="field-grid compact">
+          <select data-admin-status="${item.id}">
+            <option value="UNDER_REVIEW">Under review</option>
+            <option value="RESOLVED">Resolved</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+          <input data-admin-refund="${item.id}" type="number" min="0" step="1" placeholder="Refund amount">
+        </div>
+        <textarea data-admin-note="${item.id}" rows="2" placeholder="Resolution notes"></textarea>
+        <div class="job-route-actions">
+          <button class="btn primary" type="button" data-admin-save="${item.id}">Update dispute</button>
+        </div>
+      ` : ""}
+    </article>
+  `).join("");
+
+  if (user?.is_admin) {
+    document.querySelectorAll("[data-admin-save]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const id = Number(button.dataset.adminSave);
+        const result = await authFetch(`/api/ops/disputes/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: document.querySelector(`[data-admin-status="${id}"]`).value,
+            refund_amount: Number(document.querySelector(`[data-admin-refund="${id}"]`).value || 0),
+            resolution_notes: document.querySelector(`[data-admin-note="${id}"]`).value,
+          }),
+        });
+        if (!result.ok) {
+          showMkToast(result.data?.error || "Something went wrong. We're on it.", "error");
+          return;
+        }
+        showMkToast("Dispute updated", "success");
+        loadDisputes();
+      });
+    });
+  }
+}
+
+document.getElementById("createDisputeBtn").addEventListener("click", async () => {
+  const response = await authFetch("/api/ops/disputes", {
+    method: "POST",
+    body: JSON.stringify({
+      booking_id: Number(disputeBookingId.value),
+      category: disputeCategory.value,
+      description: disputeDescription.value,
+    }),
+  });
+  if (!response.ok) {
+    showMkToast(response.data?.error || "Something went wrong. We're on it.", "error");
+    return;
+  }
+  disputeDescription.value = "";
+  showMkToast("Dispute submitted", "success");
+  loadDisputes();
+});
+
+loadDisputes();
+</script>
+{% endblock %}

@@ -1,84 +1,282 @@
 {% extends "base.html" %}
 
+{% block title %}Provider Dashboard | Sklio{% endblock %}
 {% block content %}
-<div class="card glass">
-  <h2>Provider Dashboard</h2>
-  <p class="muted" id="providerMeta"></p>
+<section class="section">
+  <div class="card mk-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+      <h2 class="mk-display-md" style="margin: 0;">Provider dashboard <span id="providerChatBadge"></span></h2>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <label for="availabilityToggle" class="mk-body-sm" id="availabilityLabel">Loading...</label>
+        <label class="switch" style="position: relative; display: inline-block; width: 40px; height: 20px;">
+          <input type="checkbox" id="availabilityToggle" disabled style="opacity: 0; width: 0; height: 0;">
+          <span class="slider round" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--gray-300); transition: .4s; border-radius: 20px;"></span>
+        </label>
+        <!-- Adding some inline styles for the slider pseudo-element since we don't want to break existing css -->
+        <style>
+          .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+          input:checked + .slider { background-color: var(--success-500); }
+          input:checked + .slider:before { transform: translateX(20px); }
+          input:disabled + .slider { opacity: 0.6; cursor: not-allowed; }
+        </style>
+      </div>
+    </div>
+    <div id="providerDashboardStatus" data-testid="provider-dashboard-status" class="mk-body-sm" style="margin-top:8px;"></div>
+    <p class="mk-body-sm" id="providerMeta"></p>
 
-  <hr>
+    <div id="earningsPanel" class="card mk-card" style="margin-top:16px; display:flex; gap:24px; align-items:center;">
+        <h3 class="mk-heading" style="margin:0;">Earnings Overview</h3>
+        <div>Total: <strong id="totalEarnings" style="color:var(--brand-600)">₹0.00</strong></div>
+        <div style="font-size:0.9em;color:var(--gray-500)">Pending: <span id="pendingEarnings">₹0.00</span></div>
+    </div>
 
-  <h3>🟡 Pending Jobs</h3>
-  <div id="pendingJobs"></div>
+    <div class="card mk-card" style="margin-top:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h3 class="mk-heading" style="margin:0;">Action center</h3>
+          <p class="mk-body-sm muted" style="margin-top:4px;">Focus on the next actions that move your profile toward more live work.</p>
+        </div>
+        <a class="btn ghost" href="/provider/kyc-status">Open KYC center</a>
+      </div>
+      <div id="providerActionCenter" style="margin-top:12px;display:grid;gap:12px;"></div>
+    </div>
 
-  <h3 style="margin-top:20px;">🟢 Active Jobs</h3>
-  <div id="activeJobs"></div>
+    <div class="timeline" style="margin-top:16px;">
+      <div class="timeline-step active">Requested</div>
+      <div class="timeline-step">Confirmed</div>
+      <div class="timeline-step">En route</div>
+      <div class="timeline-step">Arrived</div>
+      <div class="timeline-step">In progress</div>
+      <div class="timeline-step">Completed</div>
+    </div>
 
-  <h3 style="margin-top:20px;">✅ Completed Jobs</h3>
-  <div id="completedJobs"></div>
-</div>
+    <div class="grid grid-3" style="margin-top:24px;">
+      <div class="card mk-card">
+        <h3 class="mk-heading">Pending jobs</h3>
+        <div id="pendingJobs"></div>
+      </div>
+      <div class="card mk-card">
+        <h3 class="mk-heading">Active jobs</h3>
+        <div id="activeJobs"></div>
+      </div>
+      <div class="card mk-card">
+        <h3 class="mk-heading">Completed jobs</h3>
+        <div id="completedJobs"></div>
+      </div>
+      <div class="card mk-card">
+        <h3 class="mk-heading">Cancelled jobs</h3>
+        <div id="cancelledJobs"></div>
+      </div>
+    </div>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-import { authFetch } from "/static/js/main.js";
+import { authFetch, showMkToast } from "/static/js/main.js";
 
-/* ===============================
-   LOAD DASHBOARD
-================================ */
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 async function loadDashboard(){
   const res = await authFetch("/api/provider/dashboard");
   if(!res.ok){
-    alert(res.data?.error || "Not authorized");
+    const dashboardStatus = document.getElementById("providerDashboardStatus");
+    if (dashboardStatus) {
+      dashboardStatus.textContent = res.data?.reason || res.data?.error || "Unable to load dashboard.";
+    }
+    if (res.status === 403 && res.data?.error === "provider verification incomplete") {
+      showMkToast("Complete provider verification to unlock the dashboard.", "error");
+      setTimeout(() => window.location.replace("/provider_verification"), 800);
+      return;
+    }
+    showMkToast(res.data?.reason || res.data?.error || "Session expired. Please log in again.", "error");
     return;
   }
 
   const { provider, bookings } = res.data;
+  const dashboardStatus = document.getElementById("providerDashboardStatus");
+  if (dashboardStatus) dashboardStatus.textContent = "";
+  
+  try {
+      const earnRes = await authFetch("/api/provider/earnings");
+      if (earnRes.ok) {
+          document.getElementById('totalEarnings').innerText = `₹${earnRes.data.total.toFixed(2)}`;
+          document.getElementById('pendingEarnings').innerText = `₹${earnRes.data.pending.toFixed(2)}`;
+      } else {
+          document.getElementById('totalEarnings').innerText = "—";
+          document.getElementById('pendingEarnings').innerText = "—";
+      }
+  } catch(e) {
+      document.getElementById('totalEarnings').innerText = "—";
+      document.getElementById('pendingEarnings').innerText = "—";
+  }
 
   document.getElementById("providerMeta").innerHTML = `
-    ⭐ ${provider.rating || 0} rating •
-    ${provider.completed_jobs || 0} jobs •
-    ₹${provider.wallet_balance || 0} wallet
-    ${provider.is_verified ? " • ✅ Verified" : ""}
+    <span class="chip">${provider.rating || 0} rating</span>
+    <span class="chip">${provider.completed_jobs || 0} jobs</span>
+    <span class="chip gold">₹${provider.wallet_balance || 0} wallet</span>
+    ${provider.is_verified ? "<span class='chip success'>Verified</span>" : ""}
+    ${provider.kyc_status === "approved" ? "<span class='chip success'>KYC approved</span>" : ""}
+    ${provider.kyc_status !== "approved" ? `<span class='chip'>KYC ${escapeHtml(provider.kyc_status || "pending")}</span>` : ""}
   `;
+
+  // --- Availability Toggle Logic ---
+  const toggle = document.getElementById("availabilityToggle");
+  const toggleLabel = document.getElementById("availabilityLabel");
+  
+  if (toggle) {
+    toggle.disabled = false;
+    toggle.checked = provider.is_accepting_bookings !== false;
+    toggleLabel.textContent = toggle.checked ? "Online (Accepting bookings)" : "Offline (Paused)";
+    toggleLabel.style.color = toggle.checked ? "var(--success-600)" : "var(--gray-500)";
+    
+    // Remove old listeners to avoid duplicates on reload
+    const newToggle = toggle.cloneNode(true);
+    toggle.parentNode.replaceChild(newToggle, toggle);
+    
+    newToggle.addEventListener("change", async (e) => {
+      const isAccepting = e.target.checked;
+      newToggle.disabled = true;
+      toggleLabel.textContent = "Updating...";
+      
+      const res = await authFetch("/api/provider/availability", {
+        method: "POST",
+        body: JSON.stringify({ is_accepting_bookings: isAccepting })
+      });
+      
+      newToggle.disabled = false;
+      if (res.ok) {
+        const newState = res.data.is_accepting_bookings;
+        newToggle.checked = newState;
+        toggleLabel.textContent = newState ? "Online (Accepting bookings)" : "Offline (Paused)";
+        toggleLabel.style.color = newState ? "var(--success-600)" : "var(--gray-500)";
+        showMkToast(`You are now ${newState ? 'online' : 'offline'}.`, "success");
+      } else {
+        newToggle.checked = !isAccepting; // Revert
+        toggleLabel.textContent = !isAccepting ? "Online (Accepting bookings)" : "Offline (Paused)";
+        showMkToast("Failed to update availability.", "error");
+      }
+    });
+  }
+
+  document.querySelectorAll("[data-mk-kyc-notice]").forEach((node) => node.remove());
+  if (provider.kyc_blocked) {
+    const notice = document.createElement("div");
+    notice.className = "card mk-card";
+    notice.style.marginTop = "16px";
+    notice.dataset.mkKycNotice = "true";
+    notice.innerHTML = `
+      <strong class="mk-heading">KYC pending</strong><br>
+      <span class="mk-body-sm">
+        ${escapeHtml(provider.kyc_notice || provider.kyc_rejection_reason || "Your KYC is not approved yet. Complete verification to become bookable.")}
+      </span>
+      <div style="margin-top:10px;">
+        <a class="btn primary" href="/provider/kyc-status">Review KYC steps</a>
+      </div>
+    `;
+    document.querySelector(".section .card").appendChild(notice);
+  }
+
+  renderActionCenter(res.data.recommended_actions || []);
 
   renderJobs("pendingJobs", bookings.pending);
   renderJobs("activeJobs", bookings.active);
   renderJobs("completedJobs", bookings.completed);
+  renderJobs("cancelledJobs", bookings.cancelled);
+
+  // Sync timeline with the most active booking
+  let mainStatus = "idle";
+  if (bookings.active && bookings.active.length > 0) {
+    mainStatus = bookings.active[0].status;
+  } else if (bookings.pending && bookings.pending.length > 0) {
+    mainStatus = "PENDING";
+  } else if (bookings.completed && bookings.completed.length > 0) {
+    mainStatus = "COMPLETED";
+  }
+  updateTimeline(mainStatus);
 }
 
-/* ===============================
-   RENDER JOB CARDS
-================================ */
-function renderJobs(containerId, jobs){
-  const el = document.getElementById(containerId);
+function updateTimeline(status) {
+  const steps = document.querySelectorAll(".timeline-step");
+  if (!steps || steps.length === 0) return;
+  // requested, confirmed, en route, arrived, in progress, completed
+  let stepIdx = -1;
+  const s = String(status).toUpperCase();
+  if (s === "PENDING") stepIdx = 0;
+  if (s === "CONFIRMED") stepIdx = 1;
+  if (s === "IN_PROGRESS") stepIdx = 4; // en route / arrived / in progress handled roughly here
+  if (s === "COMPLETED") stepIdx = 5;
 
-  if(!jobs || jobs.length === 0){
-    el.innerHTML = "<p class='muted'>No jobs</p>";
+  steps.forEach((el, idx) => {
+    if (idx <= stepIdx) el.classList.add("active");
+    else el.classList.remove("active");
+  });
+}
+
+function renderActionCenter(actions) {
+  const host = document.getElementById("providerActionCenter");
+  if (!host) return;
+  if (!actions || actions.length === 0) {
+    host.innerHTML = "<p class='mk-body-sm muted'>No urgent actions right now. Keep your profile current and stay responsive.</p>";
     return;
   }
-
-  el.innerHTML = jobs.map(j => `
-    <div class="card glass" style="margin-bottom:10px;">
-      <b>${j.skill}</b><br>
-      Seeker: ${j.seeker}<br>
-      Scheduled: ${new Date(j.scheduled_at).toLocaleString()}<br>
-      Price: ₹${j.price}<br>
-      Status: <b>${j.status}</b>
-
-      <div style="margin-top:8px;">
-        ${renderActions(j)}
+  host.innerHTML = actions.map((action) => `
+    <div class="mk-card" style="padding:12px;border:1px solid var(--gray-100);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <div class="mk-heading" style="margin-bottom:4px;">${escapeHtml(action.title)}</div>
+          <div class="mk-body-sm muted">${escapeHtml(action.description || "")}</div>
+        </div>
+        <a class="btn primary" href="${escapeHtml(action.href || '#')}">${escapeHtml(action.label || 'Open')}</a>
       </div>
     </div>
   `).join("");
 }
 
-/* ===============================
-   ACTION BUTTONS
-================================ */
+function renderJobs(containerId, jobs){
+  const el = document.getElementById(containerId);
+
+  if(!jobs || jobs.length === 0){
+    el.innerHTML = "<p class='mk-body-sm'>No jobs</p>";
+    return;
+  }
+
+  el.innerHTML = jobs.map(j => `
+    <div class="mk-card mk-card-booking mk-booking-accent" ${containerId === "pendingJobs" ? 'data-testid="pending-booking"' : ""} data-state="${String(j.status || '').toLowerCase()}" style="margin-bottom:12px;">
+      <strong>${escapeHtml(j.skill)}</strong><br>
+      Seeker: ${escapeHtml(j.seeker)}<br>
+      Scheduled: ${j.scheduled_at ? new Date(j.scheduled_at).toLocaleString() : "Not scheduled"}<br>
+      Price: ₹${j.price}<br>
+      Status: <span class="mk-chip" data-testid="booking-status" data-state="${String(j.status || '').toLowerCase()}">${escapeHtml(j.status)}</span>
+      ${j.timeline_preview ? `<div class="mk-body-sm muted" style="margin-top:4px;">Latest: ${escapeHtml(j.timeline_preview.summary || "")}</div>` : ""}
+      ${j.review_rating ? `<br>Feedback: ⭐ ${Number(j.review_rating).toFixed(1)}${j.review_comment ? ` — ${escapeHtml(j.review_comment)}` : ""}` : ""}
+      ${j.status === "CANCELLED" && j.cancellation_reason ? `<div class="mk-body-sm" style="color:var(--danger-600);margin-top:4px;">Reason: ${escapeHtml(j.cancellation_reason)}</div>` : ""}
+      ${renderReviewReply(j)}
+      ${renderPrivateNotes(j)}
+
+      <div style="margin-top:8px;">
+        <a class="btn ghost" href="/chat/booking_${j.id}">
+          Chat
+        </a>
+        ${renderActions(j)}
+      </div>
+    </div>
+  `).join("");
+  if (window.lucide) window.lucide.createIcons();
+}
+
 function renderActions(job){
   if(job.status === "PENDING"){
     return `
-      <button class="btn primary" onclick="window.decide(${job.id}, 'accept')">
+      <button class="btn primary" data-testid="accept-booking-btn" onclick="window.decide(${job.id}, 'accept')">
         Accept
       </button>
       <button class="btn ghost" onclick="window.decide(${job.id}, 'reject')">
@@ -89,8 +287,8 @@ function renderActions(job){
 
   if(job.status === "CONFIRMED"){
     return `
-      <a class="btn neon" href="/worker_track/${job.id}">
-        Share Live Location
+      <a class="btn secondary" href="/worker_track/${job.id}">
+        Share live location
       </a>
       <button class="btn primary" onclick="window.completeJob(${job.id})">
         Complete
@@ -101,48 +299,205 @@ function renderActions(job){
   return "";
 }
 
-/* ===============================
-   API ACTIONS (GLOBAL)
-================================ */
+function renderPrivateNotes(job) {
+  return `
+    <div class="mk-card" style="margin-top:10px;padding:10px;background:var(--gray-50);">
+      <div class="mk-label-upper">Private notes</div>
+      <div class="mk-body-sm" style="color:var(--gray-500);margin-bottom:6px;">Only you can see this</div>
+      <textarea
+        data-provider-notes="${job.id}"
+        rows="3"
+        maxlength="1000"
+        placeholder="Add private notes about this job (only visible to you)"
+        style="width:100%;"
+      >${escapeHtml(job.provider_notes || "")}</textarea>
+      <div class="mk-body-sm" style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;">
+        <span data-provider-notes-status="${job.id}">Saved</span>
+        <span data-provider-notes-count="${job.id}">${String((job.provider_notes || "").length)}/1000</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderReviewReply(job) {
+  if (!job.review_rating) return "";
+  if (job.review_provider_reply) {
+    return `
+      <div class="mk-card" style="margin-top:10px;padding:10px;border-left:3px solid var(--brand-200);">
+        <div class="mk-label-upper">Response from provider</div>
+        <div class="mk-body-sm">${escapeHtml(job.review_provider_reply)}</div>
+      </div>
+    `;
+  }
+  if (!job.review_id) return "";
+  return `
+    <div class="mk-card" style="margin-top:10px;padding:10px;">
+      <button class="btn ghost" type="button" data-review-reply-toggle="${job.review_id}">Reply to this review →</button>
+      <div data-review-reply-panel="${job.review_id}" style="display:none;margin-top:8px;">
+        <textarea
+          data-review-reply-input="${job.review_id}"
+          rows="3"
+          maxlength="280"
+          placeholder="Write a short public response"
+          style="width:100%;"
+        ></textarea>
+        <div class="mk-body-sm" style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;">
+          <span data-review-reply-count="${job.review_id}">0/280</span>
+          <button class="btn primary" type="button" data-review-reply-submit="${job.review_id}">Post reply</button>
+        </div>
+        <div class="mk-body-sm" data-review-reply-status="${job.review_id}" style="margin-top:6px;"></div>
+      </div>
+    </div>
+  `;
+}
+
 window.decide = async function(id, action){
   const res = await authFetch(`/api/bookings/${id}/decision`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action })
   });
 
   if(!res.ok){
-    alert(res.data?.error || "Failed to update booking");
+    showMkToast(res.data?.error || "Something went wrong. We're on it.", "error");
     return;
   }
 
-  alert(`Booking ${action}ed`);
+  const dashboardStatus = document.getElementById("providerDashboardStatus");
+  if (dashboardStatus) dashboardStatus.textContent = `Booking ${action}ed`;
+  showMkToast(`Booking ${action}ed`, "success");
   loadDashboard();
 };
 
 window.completeJob = async function(id){
   const res = await authFetch(`/api/bookings/${id}/complete`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    }
+    headers: { "Content-Type": "application/json" }
   });
 
   if(!res.ok){
-    alert(res.data?.error || "Failed to complete job");
+    showMkToast(res.data?.error || "Something went wrong. We're on it.", "error");
     return;
   }
 
-  alert("Job completed ✔");
+  const dashboardStatus = document.getElementById("providerDashboardStatus");
+  if (dashboardStatus) dashboardStatus.textContent = "Completed";
+  showMkToast("Job completed", "success");
   loadDashboard();
 };
 
-/* ===============================
-   INIT
-================================ */
-loadDashboard();
-</script>
+function bindInteractiveDashboardControls() {
+  const noteTimers = new Map();
+  document.querySelectorAll("[data-provider-notes]").forEach((textarea) => {
+    const bookingId = textarea.dataset.providerNotes;
+    const countEl = document.querySelector(`[data-provider-notes-count="${bookingId}"]`);
+    const statusEl = document.querySelector(`[data-provider-notes-status="${bookingId}"]`);
 
+    textarea.addEventListener("input", () => {
+      if (countEl) countEl.textContent = `${textarea.value.length}/1000`;
+      if (statusEl) statusEl.textContent = "Saving...";
+      if (noteTimers.has(bookingId)) {
+        clearTimeout(noteTimers.get(bookingId));
+      }
+      noteTimers.set(bookingId, setTimeout(async () => {
+        const response = await authFetch(`/api/bookings/${bookingId}/notes`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes: textarea.value }),
+        });
+        if (statusEl) statusEl.textContent = response.ok ? "Saved" : (response.data?.error || "Save failed");
+      }, 1500));
+    });
+  });
+
+  document.querySelectorAll("[data-review-reply-toggle]").forEach((button) => {
+    const reviewId = button.dataset.reviewReplyToggle;
+    const panel = document.querySelector(`[data-review-reply-panel="${reviewId}"]`);
+    button.addEventListener("click", () => {
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+  });
+
+  document.querySelectorAll("[data-review-reply-input]").forEach((textarea) => {
+    const reviewId = textarea.dataset.reviewReplyInput;
+    const countEl = document.querySelector(`[data-review-reply-count="${reviewId}"]`);
+    textarea.addEventListener("input", () => {
+      if (countEl) countEl.textContent = `${textarea.value.length}/280`;
+    });
+  });
+
+  document.querySelectorAll("[data-review-reply-submit]").forEach((button) => {
+    const reviewId = button.dataset.reviewReplySubmit;
+    const inputEl = document.querySelector(`[data-review-reply-input="${reviewId}"]`);
+    const statusEl = document.querySelector(`[data-review-reply-status="${reviewId}"]`);
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      const response = await authFetch(`/api/bookings/reviews/${reviewId}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reply: inputEl.value }),
+      });
+      button.disabled = false;
+      if (!response.ok) {
+        statusEl.textContent = response.data?.error || "Unable to post reply";
+        return;
+      }
+      statusEl.textContent = "Reply posted";
+      loadDashboard();
+    });
+  });
+}
+
+function bindStripeOnboarding() {
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest('a[href="#onboardStripe"]');
+    if (!btn) return;
+    e.preventDefault();
+    
+    btn.classList.add("loading");
+    btn.innerText = "Connecting...";
+    
+    try {
+      const res = await authFetch("/api/payouts/onboard", { method: "POST" });
+      if (res.ok && res.data.url) {
+        window.location.href = res.data.url;
+      } else {
+        showMkToast(res.data.error || "Failed to start onboarding.", "error");
+        btn.classList.remove("loading");
+        btn.innerText = "Connect account";
+      }
+    } catch (err) {
+      showMkToast("Network error. Please try again.", "error");
+      btn.classList.remove("loading");
+      btn.innerText = "Connect account";
+    }
+  });
+}
+
+const originalLoadDashboard = loadDashboard;
+loadDashboard = async function wrappedLoadDashboard() {
+  await originalLoadDashboard();
+  bindInteractiveDashboardControls();
+  bindStripeOnboarding();
+};
+
+loadDashboard();
+
+async function refreshChatBadge() {
+  const badgeHost = document.getElementById("providerChatBadge");
+  if (!badgeHost) return;
+  const res = await authFetch("/api/chat/unread-count", { method: "GET" });
+  badgeHost.innerHTML = "";
+  if (!res.ok) return;
+  const count = Number(res.data?.count || 0);
+  if (count <= 0) return;
+  const span = document.createElement("span");
+  span.className = "mk-unread-badge";
+  span.innerText = count > 99 ? "99+" : String(count);
+  badgeHost.appendChild(span);
+}
+
+refreshChatBadge();
+setInterval(refreshChatBadge, 15000);
+</script>
 {% endblock %}

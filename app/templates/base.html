@@ -2,53 +2,70 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sklio • Local Skills</title>
+  <title>{% block title %}Sklio — Local Skills Marketplace{% endblock %}</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Sklio — local skill marketplace for plumbers, electricians, tutors and more with live tracking, chat and wallet referrals.">
+  <meta name="description" content="Sklio - local skill marketplace for plumbers, electricians, tutors and more with live tracking, chat and wallet referrals.">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
 
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@700,500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
   <script>
-    // small global config: API base
     const API_BASE = "/api";
   </script>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sklio">
+
+  <!-- SEO Open Graph -->
+  <meta property="og:title" content="{% block og_title %}Sklio — Local Skills Marketplace{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}Sklio - local skill marketplace for plumbers, electricians, tutors and more with live tracking, chat and wallet referrals.{% endblock %}">
+  <meta property="og:image" content="{% block og_image %}{{ url_for('static', filename='images/logo.png', _external=True) }}{% endblock %}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.url }}">
 </head>
 
-<body>
+<body
+  style="background: var(--surface-1);"
+  data-env="{{ config.get('ENV', 'development') }}"
+  data-feature-job-posts="{{ 'true' if config.get('FEATURE_JOB_POSTS') else 'false' }}"
+>
+  <div style="height:4px; background:var(--brand-50);"></div>
   <header class="site-header">
     <div class="container">
-      <a class="brand" href="{{ url_for('front.index') }}">
-        <span class="logo-box"></span>
-        <span class="brand-text">Sklio</span>
-      </a>
-
-      <nav class="nav">
-        {% set endpoint = request.endpoint or '' %}
-
-        <a href="{{ url_for('front.home') }}"
-           class="{% if endpoint.startswith('front.home') %}active{% endif %}">
-          Home
+      <div style="display:flex; align-items:center;">
+        <a class="brand" href="{{ url_for('front.index') }}">
+          <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Sklio Logo" style="width: 32px; height: 32px; border-radius: 8px; object-fit: contain;" />
+          <span class="brand-text">Sklio</span>
         </a>
 
-        <a href="{{ url_for('front.wallet_page') }}"
-           class="{% if endpoint.startswith('front.wallet_page') %}active{% endif %}">
-          Wallet
-        </a>
+        <nav class="main-nav" id="mainNav" aria-label="Primary navigation"></nav>
+        <noscript>
+          <nav class="main-nav" aria-label="Primary navigation fallback">
+            <a href="{{ url_for('front.home') }}">Home</a>
+            {% if config.get('FEATURE_JOB_POSTS') %}
+            <a href="/jobs">Browse Jobs</a>
+            {% endif %}
+          </nav>
+        </noscript>
+      </div>
 
-        <a href="{{ url_for('front.index') }}"
-           class="{% if endpoint == 'front.index' %}active{% endif %}">
-          Docs
-        </a>
-
-        <a class="btn neon"
-           href="{{ url_for('front.demo_login') }}"
-           style="margin-left:16px;">
-          Demo Login
-        </a>
-      </nav>
-
-      <!-- Auth bar controlled by JS (main.js) -->
-      <div data-auth-bar class="auth-bar"></div>
+      <div class="header-actions" id="headerActions">
+        <a href="{{ url_for('front.demo_login') }}" class="btn secondary small">Demo Login</a>
+        <div class="mobile-toggle" id="mobileToggle">
+          <i data-lucide="menu"></i>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -58,48 +75,108 @@
 
   <footer class="site-footer">
     <div class="container">
-      © Sklio — Local skill marketplace
+      <div>&copy; 2026 Sklio — Local Skills Marketplace</div>
+      <div class="footer-links">
+        <a href="{{ url_for('front.terms_page') }}">Terms</a>
+        <a href="{{ url_for('front.privacy_page') }}">Privacy</a>
+        <a href="{{ url_for('front.cookie_policy_page') }}">Cookie Policy</a>
+        <a href="{{ url_for('front.refund_policy_page') }}">Refunds</a>
+        <a href="{{ url_for('front.provider_agreement_page') }}">Provider Terms</a>
+        <a href="{{ url_for('front.grievance_page') }}">Grievance</a>
+        <a href="{{ url_for('front.contact_page') }}">Contact Us</a>
+      </div>
     </div>
   </footer>
 
-  <!-- Socket.IO (for chat + live tracking) -->
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-
-  <!-- Main JS (can populate [data-auth-bar] and provide authFetch, etc.) -->
+  <script src="{{ url_for('static', filename='vendor/socket.io.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/lucide.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/mk-ui.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 
-
-  <!-- Fade-in animation on scroll -->
   <script>
-  function goToBooking(skillId) {
-    window.location.href = `/booking/${skillId}`;
-  }
+    function goToBooking(skillId, providerId) {
+      const query = providerId ? `?provider=${encodeURIComponent(providerId)}` : "";
+      window.location.href = `/booking/${skillId}${query}`;
+    }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const els = document.querySelectorAll('.card, .skill-card, .flip-card');
+    document.addEventListener('DOMContentLoaded', () => {
+      const els = document.querySelectorAll('.card, .skill-card');
 
-    const onScroll = () => {
-      const trigger = window.innerHeight * 0.9;
+      const onScroll = () => {
+        const trigger = window.innerHeight * 0.9;
+        els.forEach(el => {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < trigger) {
+            el.style.opacity = 1;
+            el.style.transform = 'translateY(0px)';
+          }
+        });
+      };
+
       els.forEach(el => {
-        const rect = el.getBoundingClientRect();
-        if (rect.top < trigger) {
-          el.style.opacity = 1;
-          el.style.transform = 'translateY(0px)';
-        }
+        el.style.opacity = 0;
+        el.style.transform = 'translateY(22px)';
+        el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
       });
-    };
 
-    els.forEach(el => {
-      el.style.opacity = 0;
-      el.style.transform = 'translateY(22px)';
-      el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      window.addEventListener('scroll', onScroll);
+      onScroll();
     });
-
-    window.addEventListener('scroll', onScroll);
-    onScroll();
-  });
-</script>
+  </script>
 
   {% block scripts %}{% endblock %}
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+      });
+    }
+  </script>
+
+  <!-- Cookie Consent Banner & Analytics -->
+  <div id="cookie-consent-banner" style="display:none; position:fixed; bottom:0; left:0; right:0; background:var(--surface-2); padding:16px; box-shadow:0 -4px 12px rgba(0,0,0,0.1); z-index:9999; flex-direction:column; gap:12px; align-items:center; border-top: 1px solid var(--border-color);">
+    <div style="flex-grow:1; text-align:center; max-width:800px; margin:0 auto; font-size:14px; color:var(--text-1);">
+      We use cookies to enhance your experience, analyze site traffic, and assist in our marketing efforts. By clicking "Accept All", you agree to the storing of cookies on your device.
+      <a href="{{ url_for('front.cookie_policy_page') }}" style="color:var(--brand-50); text-decoration:underline;">Cookie Policy</a>
+    </div>
+    <div style="display:flex; gap:12px;">
+      <button id="btn-cookie-decline" class="btn secondary small">Decline</button>
+      <button id="btn-cookie-accept" class="btn primary small">Accept All</button>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const banner = document.getElementById("cookie-consent-banner");
+      const btnAccept = document.getElementById("btn-cookie-accept");
+      const btnDecline = document.getElementById("btn-cookie-decline");
+      
+      const consent = localStorage.getItem("sklio_cookie_consent");
+      if (!consent) {
+        banner.style.display = "flex";
+      } else if (consent === "accepted") {
+        enableAnalytics();
+      }
+
+      btnAccept.addEventListener("click", () => {
+        localStorage.setItem("sklio_cookie_consent", "accepted");
+        banner.style.display = "none";
+        enableAnalytics();
+      });
+
+      btnDecline.addEventListener("click", () => {
+        localStorage.setItem("sklio_cookie_consent", "declined");
+        banner.style.display = "none";
+      });
+
+      function enableAnalytics() {
+        if(window.analyticsEnabled) return;
+        window.analyticsEnabled = true;
+        // Inject GA4 or PostHog here
+        // console.log("Analytics enabled via user consent.");
+      }
+    });
+  </script>
 </body>
 </html>

@@ -1,48 +1,80 @@
-<!-- app/templates/provider_verification.html -->
 {% extends "base.html" %}
+{% block title %}Verify Identity | Sklio{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Provider Verification</h2>
-    <p>Please upload a government ID (Aadhaar, Driving License, Passport) to verify your account. This is required to accept jobs.</p>
+<section class="section">
+  <div class="card mk-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <span class="mk-label">Step 1 of 3 — ID Verification</span>
+      <span class="mk-label">33%</span>
+    </div>
+    <div class="mk-kyc-progress-bar" style="margin-bottom:12px;">
+      <div class="mk-kyc-progress-fill" style="transform:scaleX(0.33);"></div>
+    </div>
+    <div class="badge-row">
+      <span class="chip">KYC step 1 of 3</span>
+      <span class="chip success">Secure upload</span>
+    </div>
+    <h2 class="mk-display-md">Provider verification</h2>
+    <p class="mk-body-sm">
+      Upload a government ID to start verification. This keeps the marketplace safe.
+    </p>
 
-    <form id="uploadForm" enctype="multipart/form-data" onsubmit="uploadDoc(event)">
-      <label>Document type</label>
+    <form id="uploadForm" enctype="multipart/form-data" onsubmit="uploadDoc(event)" class="card mk-card" style="margin-top:16px;">
+      <label class="mk-label">Document type</label>
       <select id="doc_type">
         <option value="aadhaar">Aadhaar</option>
-        <option value="driving">Driving License</option>
+        <option value="driving license">Driving License</option>
         <option value="passport">Passport</option>
         <option value="other">Other</option>
       </select>
 
-      <label>Choose file (JPG, PNG, PDF)</label>
+      <label class="mk-label" style="margin-top:12px;">Choose file (JPG, PNG, PDF)</label>
       <input type="file" id="doc_file" accept=".png,.jpg,.jpeg,.pdf" />
-      <div style="margin-top:12px;">
+      <p id="docError" class="mk-field-error"></p>
+      <div class="actions" style="margin-top:12px;">
         <button class="btn primary" type="submit">Upload</button>
+        <a class="btn ghost" href="/provider_verification_selfie">Selfie fallback</a>
       </div>
     </form>
 
     <div id="resp" style="margin-top:12px;"></div>
-    <p class="muted">Document is automatically verified. If valid, you will proceed to face verification.</p>
+    <p class="muted small">If valid, you will proceed to face verification.</p>
   </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script type="module">
+import { showMkToast } from "/static/js/main.js";
+
 async function uploadDoc(e){
   e.preventDefault();
 
   const fileInput = document.getElementById('doc_file');
   const docType = document.getElementById('doc_type').value;
   const resp = document.getElementById('resp');
+  const docError = document.getElementById('docError');
+  docError.innerText = "";
 
   if (!fileInput.files.length) {
-    alert('Choose a file');
+    docError.innerText = "Document file is required";
+    return;
+  }
+  const file = fileInput.files[0];
+  const maxBytes = 5 * 1024 * 1024;
+  const allowed = ["image/jpeg", "image/png", "application/pdf"];
+  if (file.size > maxBytes) {
+    docError.innerText = "Photo must be under 5 MB";
+    return;
+  }
+  if (!allowed.includes(file.type)) {
+    docError.innerText = "Please upload a JPG, PNG, or PDF file";
     return;
   }
 
   const token = localStorage.getItem('sklio_access_token');
   if (!token) {
-    alert('Please login again');
+    showMkToast("Session expired. Please log in again.", "error");
     return;
   }
 
@@ -51,7 +83,7 @@ async function uploadDoc(e){
   btn.innerText = 'Verifying document...';
 
   const form = new FormData();
-  form.append('file', fileInput.files[0]);
+  form.append('file', file);
   form.append('document_type', docType);
 
   let res, text;
@@ -59,17 +91,14 @@ async function uploadDoc(e){
   try {
     res = await fetch('/api/auth/upload_document', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token
-      },
+      headers: { 'Authorization': 'Bearer ' + token },
       body: form
     });
-
-    text = await res.text(); // ⚠️ IMPORTANT
+    text = await res.text();
   } catch (err) {
     btn.disabled = false;
     btn.innerText = 'Upload';
-    alert('Network error');
+    showMkToast("Connection error. Check your internet and try again.", "error");
     return;
   }
 
@@ -80,7 +109,7 @@ async function uploadDoc(e){
     btn.disabled = false;
     btn.innerText = 'Upload';
     resp.innerText = text;
-    alert('Server error (not JSON)');
+    showMkToast("Something went wrong. We're on it.", "error");
     return;
   }
 
@@ -89,14 +118,29 @@ async function uploadDoc(e){
   if (!res.ok) {
     btn.disabled = false;
     btn.innerText = 'Upload';
-    alert(data.error || 'Verification failed');
+    showMkToast(data.error || "Something went wrong. We're on it.", "error");
     return;
   }
 
-  // ✅ SUCCESS
-  alert('Document verified successfully');
-  window.location.href = '/provider_verification_video';
-}
-</script>
+  showMkToast("Document verified", "success");
 
+  let needsSelfie = data.requires_selfie;
+  if (needsSelfie === undefined) {
+    try {
+      const meRes = await fetch('/api/auth/me', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const meData = await meRes.json().catch(() => ({}));
+      needsSelfie = meData?.requires_selfie === true;
+    } catch {
+      needsSelfie = true;
+    }
+  }
+
+  window.location.href = needsSelfie
+    ? '/provider_verification_selfie'
+    : '/provider_verification_video';
+}
+window.uploadDoc = uploadDoc;
+</script>
 {% endblock %}
