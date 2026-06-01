@@ -89,8 +89,10 @@ def _mark_confirmed(booking, payment_intent_id, payment_reference):
 def _complete_wallet_topup(topup, payload_object, event_id):
     from ..services.wallet_service import credit, emit_wallet_update
 
+    provider = getattr(topup, "provider", "stripe") or "stripe"
+
     if topup.status == "COMPLETED":
-        db.session.add(WebhookEvent(event_id=event_id, provider="stripe"))
+        db.session.add(WebhookEvent(event_id=event_id, provider=provider))
         db.session.commit()
         return "duplicate_topup"
 
@@ -105,7 +107,7 @@ def _complete_wallet_topup(topup, payload_object, event_id):
         user_id=topup.user_id,
         amount=amount_major,
         txn_type=WalletTransactionType.CREDIT_TOPUP,
-        description=f"Wallet Top-up (Stripe {payment_intent})",
+        description=f"Wallet Top-up ({provider.upper()} {payment_intent})",
         reference_type="topup",
         reference_id=topup.id,
     )
@@ -117,19 +119,19 @@ def _complete_wallet_topup(topup, payload_object, event_id):
     topup.metadata_json = {
         **(topup.metadata_json or {}),
         "webhook_event_id": event_id,
-        "provider": "stripe",
+        "provider": provider,
         "captured_amount_minor": int(amount_minor or 0),
     }
     current_app.logger.info(
         "wallet.topup_success",
         extra={
-            "provider": "stripe",
+            "provider": provider,
             "user_id": topup.user_id,
             "topup_reference": topup.topup_reference,
             "amount": float(amount_major),
         },
     )
-    db.session.add(WebhookEvent(event_id=event_id, provider="stripe"))
+    db.session.add(WebhookEvent(event_id=event_id, provider=provider))
     db.session.commit()
     emit_wallet_update(topup.user_id)
     return "ok"
@@ -142,7 +144,10 @@ def stripe_webhook():
     signature = request.headers.get("Stripe-Signature")
     secret = current_app.config.get("STRIPE_WEBHOOK_SECRET")
     if not secret:
-        return jsonify({"error": "stripe webhook secret not configured"}), 500
+        if current_app.config.get("ENV") == "development":
+            secret = "whsec_test"  # pragma: allowlist secret
+        else:
+            return jsonify({"error": "stripe webhook secret not configured"}), 500
 
     try:
         event = construct_webhook_event(payload, signature, secret)
@@ -223,6 +228,7 @@ def stripe_webhook():
 
 
 @webhooks_bp.route("/webhooks/razorpay", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("WEBHOOK_RATE_LIMIT", "120 per minute"))
 def razorpay_webhook():
     payload = request.get_data()
     signature = request.headers.get("X-Razorpay-Signature")
@@ -239,6 +245,15 @@ def razorpay_webhook():
 
     import json
     event = json.loads(payload)
+    
+    # Prevent replay attacks by checking timestamp
+    created_at = event.get("created_at")
+    if created_at:
+        event_time = datetime.fromtimestamp(created_at, tz=timezone.utc)
+        if (datetime.now(timezone.utc) - event_time).total_seconds() > 300:
+            current_app.logger.warning("razorpay.webhook_expired")
+            return jsonify({"error": "webhook expired"}), 400
+
     event_id = event.get("id")
     
     if WebhookEvent.query.filter_by(event_id=event_id).first():
@@ -308,4 +323,4 @@ def razorpay_webhook():
     except Exception as exc:
         db.session.rollback()
         current_app.logger.exception(f"razorpay.webhook_processing_failed: {exc}")
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "webhook processing failed"}), 500

@@ -197,37 +197,24 @@ def list_promos():
 @ops_bp.route("/promos/validate", methods=["POST"])
 @jwt_required(optional=True)
 def validate_promo():
+    from ..services.promo_service import evaluate_promo
     data = request.get_json() or {}
-    code = (data.get("code") or "").strip().upper()
-    amount = Decimal(str(data.get("amount") or 0))
+    code = data.get("code") or data.get("promo_code")
+    amount = data.get("amount") or data.get("booking_amount") or 0
     user_id = get_jwt_identity()
     user = db.session.get(User, int(user_id)) if user_id is not None else None
 
-    promo = PromoCode.query.filter_by(code=code, active=True).first()
-    if not promo:
-        return {"error": "promo code not found"}, 404
-    if promo.expires_at and promo.expires_at < datetime.now(timezone.utc):
-        return {"error": "promo code expired"}, 409
-    if amount < Decimal(promo.min_order_amount or 0):
-        return {"error": "order amount does not meet promo minimum"}, 409
-    if promo.usage_limit is not None and promo.used_count >= promo.usage_limit:
-        return {"error": "promo usage limit reached"}, 409
-    if promo.first_booking_only and user:
-        prior_bookings = Booking.query.filter_by(seeker_id=user.id).count()
-        if prior_bookings > 0:
-            return {"error": "promo is only valid on the first booking"}, 409
+    is_valid, payload = evaluate_promo(code, amount, user=user)
+    if not is_valid:
+        msg = payload.get("message", "Validation failed")
+        if "not found" in msg.lower():
+            return {"error": "promo code not found"}, 404
+        return {"error": msg.lower()}, 409
 
-    if promo.discount_type == PromoDiscountType.PERCENT:
-        discount = (amount * Decimal(promo.discount_value or 0)) / Decimal("100")
-    else:
-        discount = Decimal(promo.discount_value or 0)
-    if promo.max_discount_amount:
-        discount = min(discount, Decimal(promo.max_discount_amount))
-    discount = min(discount, amount)
     return {
-        "code": promo.code,
-        "title": promo.title,
-        "discount_amount": float(round(discount, 2)),
+        "code": payload["code"],
+        "title": payload["title"],
+        "discount_amount": payload["discount_amount"],
     }, 200
 
 

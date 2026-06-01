@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from ..extensions import db
 from ..models import User
 from ..services.promo_service import evaluate_promo
 

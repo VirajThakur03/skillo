@@ -25,6 +25,9 @@ def start_onboarding():
         return jsonify({"error": "Only providers can onboard for payouts"}), 403
 
     if current_app.config.get("PAYMENT_PROVIDER") == "mock":
+        env = (current_app.config.get("ENV") or "development").lower()
+        if env != "development":
+            return jsonify({"error": "mock payouts disabled outside development"}), 403
         user.stripe_account_id = f"acct_mock_{user.id}"
         user.stripe_onboarding_complete = True
         db.session.commit()
@@ -99,6 +102,9 @@ def withdraw_funds():
         return jsonify({"error": "Amount must be positive"}), 400
 
     if current_app.config.get("PAYMENT_PROVIDER") == "mock":
+        env = (current_app.config.get("ENV") or "development").lower()
+        if env != "development":
+            return jsonify({"error": "mock payouts disabled outside development"}), 403
         try:
             txn = debit(
                 user_id=user.id,
@@ -117,7 +123,7 @@ def withdraw_funds():
         transfer_id = trigger_stripe_transfer(
             user.stripe_account_id,
             amount,
-            "INR", # Default for now, could be dynamic
+            "INR",  # Default for now, could be dynamic
             description=f"Payout for user {user.id}"
         )
         txn = debit(

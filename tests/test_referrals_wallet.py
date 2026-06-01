@@ -109,3 +109,79 @@ def test_wallet_endpoint_includes_rewards_and_spends(app, client, register_user,
     assert payload["balance"] == 180.0
     assert len(payload["transactions"]) == 1
     assert payload["transactions"][0]["type"] == "referral_reward"
+
+
+def test_referral_reward_processed_on_booking_completion(
+    app,
+    client,
+    register_user,
+    auth_headers,
+):
+    from datetime import datetime, timezone, timedelta
+    from app.models import Booking, BookingStatus, PaymentStatus
+
+    # Create referrer, provider, and seeker (referred user)
+    referrer, _referrer_token = register_user(
+        "seeker",
+        name="Referrer Seeker",
+        email="ref-seeker@example.com",
+    )
+    provider, provider_token = register_user(
+        "provider",
+        name="Referral Provider",
+        email="ref-provider@example.com",
+    )
+    friend, friend_token = register_user(
+        "seeker",
+        name="Referred Friend",
+        email="ref-friend@example.com",
+    )
+
+    with app.app_context():
+        # Set friend as referred by referrer
+        friend_record = db.session.get(User, friend["id"])
+        friend_record.referred_by_id = referrer["id"]
+        
+        # Add a pending ReferralReward row
+        db.session.add(
+            ReferralReward(
+                referrer_user_id=referrer["id"],
+                referred_user_id=friend["id"],
+                status=ReferralRewardStatus.PENDING,
+                reward_amount=Decimal("100"),
+                note="Pending first booking.",
+            )
+        )
+        
+        # Create a confirmed and paid booking for the friend
+        booking = Booking(
+            seeker_id=friend["id"],
+            provider_id=provider["id"],
+            skill_id=1,
+            scheduled_at=datetime.now(timezone.utc) + timedelta(days=1),
+            duration_minutes=60,
+            price=1200,
+            currency="INR",
+            status=BookingStatus.CONFIRMED,
+            payment_status=PaymentStatus.CAPTURED,
+        )
+        db.session.add(booking)
+        db.session.commit()
+        booking_id = booking.id
+
+    # Complete the booking
+    response = client.post(
+        f"/api/bookings/{booking_id}/complete",
+        headers=auth_headers(provider_token),
+    )
+    assert response.status_code == 200
+
+    # Check referrer's wallet and reward status
+    with app.app_context():
+        referrer_record = db.session.get(User, referrer["id"])
+        assert float(referrer_record.wallet_balance) == 100.0
+        
+        reward = ReferralReward.query.filter_by(referred_user_id=friend["id"]).first()
+        assert reward.status == ReferralRewardStatus.EARNED
+        assert reward.booking_id == booking_id
+

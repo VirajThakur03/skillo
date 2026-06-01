@@ -32,7 +32,8 @@
           </ul>
         </div>
         <div class="actions" style="margin-top:16px;">
-          <button class="btn secondary" id="captureBtn">Capture selfie</button>
+          <button class="btn secondary" id="captureBtn" disabled>Capture selfie</button>
+          <button class="btn ghost" id="retakeBtn" style="display:none;">Retake</button>
           <button class="btn primary" id="uploadBtn" disabled>Upload selfie</button>
         </div>
         <div id="msg" class="muted" style="margin-top:12px;"></div>
@@ -49,32 +50,64 @@ import { authFetch } from "/static/js/main.js";
 const video = document.getElementById("video");
 const preview = document.getElementById("preview");
 const captureBtn = document.getElementById("captureBtn");
+const retakeBtn = document.getElementById("retakeBtn");
 const uploadBtn = document.getElementById("uploadBtn");
 const msg = document.getElementById("msg");
 
 let stream = null;
 let blob = null;
+let cameraReady = false;
 
 async function startCamera() {
   if (stream) {
     stream.getTracks().forEach(t => t.stop());
   }
+  cameraReady = false;
+  captureBtn.disabled = true;
 
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
     video.srcObject = stream;
     video.style.display = "block";
     preview.style.display = "none";
     uploadBtn.disabled = true;
+    retakeBtn.style.display = "none";
     blob = null;
+    msg.innerHTML = "<span class='muted'>Loading camera...</span>";
+
+    // Wait for the video stream to actually produce frames
+    video.onloadedmetadata = () => {
+      video.play();
+    };
+    video.onplaying = () => {
+      cameraReady = true;
+      captureBtn.disabled = false;
+      msg.innerHTML = "<span style='color:#34d399;'>Camera ready — capture your selfie.</span>";
+    };
   } catch (e) {
-    msg.innerHTML = "<span class='muted'>Camera access denied</span>";
+    const errorName = e.name || "";
+    if (errorName === "NotAllowedError") {
+      msg.innerHTML = "<span style='color:#f87171;'>Camera permission denied. Please allow camera access in your browser settings and refresh.</span>";
+    } else if (errorName === "NotFoundError") {
+      msg.innerHTML = "<span style='color:#f87171;'>No camera found. Please connect a camera and refresh.</span>";
+    } else if (errorName === "NotReadableError") {
+      msg.innerHTML = "<span style='color:#f87171;'>Camera is in use by another application. Close other apps using the camera and refresh.</span>";
+    } else {
+      msg.innerHTML = `<span style='color:#f87171;'>Camera error: ${e.message || "Unknown error"}. Please check browser permissions.</span>`;
+    }
   }
 }
 
 startCamera();
 
 captureBtn.onclick = () => {
+  if (!cameraReady || !video.videoWidth || !video.videoHeight) {
+    msg.innerHTML = "<span style='color:#f87171;'>Camera is not ready yet. Please wait a moment.</span>";
+    return;
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -83,19 +116,34 @@ captureBtn.onclick = () => {
   ctx.drawImage(video, 0, 0);
 
   canvas.toBlob(b => {
+    if (!b) {
+      msg.innerHTML = "<span style='color:#f87171;'>Failed to capture image. Please try again.</span>";
+      return;
+    }
     blob = b;
     preview.src = URL.createObjectURL(blob);
     preview.style.display = "block";
     video.style.display = "none";
+    captureBtn.style.display = "none";
+    retakeBtn.style.display = "inline-flex";
     uploadBtn.disabled = false;
-    msg.innerHTML = "";
+    msg.innerHTML = "<span style='color:#34d399;'>Selfie captured! Review and upload.</span>";
   }, "image/jpeg", 0.9);
+};
+
+retakeBtn.onclick = () => {
+  blob = null;
+  uploadBtn.disabled = true;
+  captureBtn.style.display = "inline-flex";
+  retakeBtn.style.display = "none";
+  startCamera();
 };
 
 uploadBtn.onclick = async () => {
   if (!blob) return;
 
   uploadBtn.disabled = true;
+  retakeBtn.style.display = "none";
   msg.innerHTML = "Uploading selfie...";
 
   const form = new FormData();
@@ -107,12 +155,13 @@ uploadBtn.onclick = async () => {
   });
 
   if (!res.ok) {
-    msg.innerHTML = `<span class='muted'>${res.data.error || "Upload failed"}</span>`;
+    msg.innerHTML = `<span style='color:#f87171;'>${res.data.error || "Upload failed"}</span>`;
     uploadBtn.disabled = false;
+    retakeBtn.style.display = "inline-flex";
     return;
   }
 
-  msg.innerHTML = "<span class='muted'>Selfie uploaded. Redirecting...</span>";
+  msg.innerHTML = "<span style='color:#34d399;'>Selfie uploaded successfully! Redirecting...</span>";
 
   setTimeout(() => {
     window.location.replace("/provider_verification_video");

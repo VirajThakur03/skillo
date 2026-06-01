@@ -65,3 +65,5 @@ scratch/
 *.db
 tmp/
 .vscode/
+web_logs.txt
+.secrets.baseline

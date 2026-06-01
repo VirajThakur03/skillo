@@ -584,6 +584,27 @@ def cancel_booking(booking_id):
         except Exception:
             pass  # column may not exist in older deploys
 
+    # ── Issue actual refund to seeker's wallet ──
+    refund_amount = Decimal(str(preview["refund_amount"] or 0))
+    refund_issued = False
+    if refund_amount > 0 and booking.payment_status == PaymentStatus.CAPTURED:
+        from ..services.wallet_service import credit as wallet_credit, emit_wallet_update
+        from ..models import WalletTransactionType
+        wallet_credit(
+            user_id=booking.seeker_id,
+            amount=refund_amount,
+            txn_type=WalletTransactionType.CREDIT_REFUND,
+            description=f"Cancellation refund for booking #{booking.id}",
+            reference_type="booking",
+            reference_id=booking.id,
+        )
+        booking.payment_status = PaymentStatus.REFUNDED
+        booking.refund_amount = refund_amount
+        booking.refund_status = RefundStatus.PROCESSED
+        booking.refund_completed_at = datetime.now(timezone.utc)
+        booking.refund_ref = f"CANCEL-REFUND-{booking.id}-{int(datetime.now(timezone.utc).timestamp())}"
+        refund_issued = True
+
     notify_booking_status_change(
         booking=booking,
         new_status="cancelled",
@@ -598,6 +619,7 @@ def cancel_booking(booking_id):
             "status": BookingStatus.CANCELLED.value,
             "reason_code": reason_code or "user_requested",
             "refund_amount": float(preview["refund_amount"] or 0),
+            "refund_issued": refund_issued,
             "summary": "Booking cancelled",
         },
     )
@@ -611,11 +633,18 @@ def cancel_booking(booking_id):
             "booking_id": booking.id,
             "cancelled_by": "provider" if user_id == booking.provider_id else "seeker",
             "fee_charged": float(preview["fee_amount"] or 0),
+            "refund_amount": float(refund_amount),
+            "refund_issued": refund_issued,
             "reason_code": reason_code or "user_requested",
         },
         request=request,
     )
     db.session.commit()
+
+    # Emit wallet update after commit so the seeker sees new balance
+    if refund_issued:
+        emit_wallet_update(booking.seeker_id)
+
     current_app.logger.warning(
         "booking.cancelled",
         extra={
@@ -623,13 +652,15 @@ def cancel_booking(booking_id):
             "cancelled_by": "provider" if user_id == booking.provider_id else "seeker",
             "reason": reason_code or "user_requested",
             "fee_applied": float(preview["fee_amount"] or 0),
+            "refund_amount": float(refund_amount),
+            "refund_issued": refund_issued,
         },
     )
     return {
         "success": True,
         "status": booking.status.value,
-        "refund_status": "PROCESSED",
-        "refund_amount": preview["refund_amount"],
+        "refund_status": "PROCESSED" if refund_issued else "NOT_APPLICABLE",
+        "refund_amount": float(refund_amount),
         "fee_charged": preview["fee_amount"],
         "policy_applied": preview["policy_label"],
         "cancellation_policy": _provider_cancellation_policy(booking.provider),
@@ -780,7 +811,7 @@ def pay_booking(booking_id):
 
     if (current_app.config.get("ENV") or "development") != "development":
         return {"error": "mock payment endpoint is disabled outside development"}, 404
-    if (current_app.config.get("PAYMENT_MODE") or "mock") != "mock":
+    if (current_app.config.get("PAYMENT_MODE") or "mock") != "mock" and not current_app.config.get("ALLOW_MOCK_PAYMENTS", False):
         return {"error": "mock payment endpoint is disabled when real payments are enabled"}, 404
 
     data = request.get_json() or {}
@@ -838,6 +869,43 @@ def pay_booking(booking_id):
     }
 
 
+def _process_referral_rewards(booking):
+    try:
+        from ..models import ReferralReward, ReferralRewardStatus, WalletTransactionType
+        from ..services.wallet_service import credit as wallet_credit, emit_wallet_update
+
+        prior_completed_count = Booking.query.filter(
+            Booking.seeker_id == booking.seeker_id,
+            Booking.status == BookingStatus.COMPLETED,
+            Booking.id != booking.id,
+        ).count()
+
+        if prior_completed_count == 0:
+            reward = ReferralReward.query.filter_by(
+                referred_user_id=booking.seeker_id,
+                status=ReferralRewardStatus.PENDING,
+            ).first()
+            if reward:
+                wallet_credit(
+                    user_id=reward.referrer_user_id,
+                    amount=reward.reward_amount,
+                    txn_type=WalletTransactionType.CREDIT_REFERRAL,
+                    description=f"Referral reward for inviting user #{booking.seeker_id}",
+                    reference_type="referral",
+                    reference_id=reward.id,
+                )
+                reward.status = ReferralRewardStatus.EARNED
+                reward.booking_id = booking.id
+                reward.paid_at = datetime.now(timezone.utc)
+                db.session.add(reward)
+                emit_wallet_update(reward.referrer_user_id)
+    except Exception as e:
+        current_app.logger.error(
+            "referrals.processing_failed",
+            extra={"booking_id": booking.id, "error": str(e)},
+        )
+
+
 @bookings_bp.route("/<int:booking_id>/complete", methods=["POST"])
 @jwt_required()
 def complete_booking(booking_id):
@@ -867,6 +935,7 @@ def complete_booking(booking_id):
         new_status="completed",
         changed_by_role="provider" if user_id == booking.provider_id else "seeker",
     )
+    _process_referral_rewards(booking)
     db.session.commit()
     try:
         if booking.invoice_url is None:
@@ -1298,6 +1367,7 @@ def cash_payment(booking_id):
             actor_user_id=user_id,
             payload={"status": BookingStatus.COMPLETED.value, "summary": "Service completed"},
         )
+        _process_referral_rewards(booking)
 
     record_booking_event(
         booking,

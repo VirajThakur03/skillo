@@ -144,3 +144,42 @@ def test_validate_promo_rejects_minimum_amount(app, client):
 
     assert response.status_code == 409
     assert response.get_json() == {"valid": False, "message": "Minimum INR 500 required"}
+
+
+def test_validate_promo_with_jwt_auth(
+    app,
+    client,
+    register_user,
+    auth_headers,
+):
+    seeker, seeker_token = register_user(
+        "seeker",
+        name="Auth Seeker",
+        email="auth-seeker-promo@example.com",
+    )
+
+    with app.app_context():
+        db.session.add(
+            PromoCode(
+                code="AUTH100",
+                title="Auth User Discount",
+                discount_type=PromoDiscountType.FIXED,
+                discount_value=Decimal("100"),
+                min_order_amount=Decimal("500"),
+                active=True,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=5),
+            )
+        )
+        db.session.commit()
+
+    response = client.post(
+        "/api/promos/validate",
+        headers=auth_headers(seeker_token),
+        json={"code": "AUTH100", "booking_amount": 600},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["valid"] is True
+    assert payload["discount_amount"] == 100.0
+

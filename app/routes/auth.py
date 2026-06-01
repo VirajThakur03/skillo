@@ -27,8 +27,9 @@ try:
         extract_video_faces,
         faces_match,
         extract_face_from_image,
+        create_recognizer,
     )
-    FACE_VERIFY_AVAILABLE = True
+    FACE_VERIFY_AVAILABLE = create_recognizer() is not None
 except ImportError:  # numpy / cv2 / deepface not installed (Windows local env)
     FACE_VERIFY_AVAILABLE = False
     # Stubs so route code can reference names without crashing
@@ -44,7 +45,7 @@ except ImportError:  # numpy / cv2 / deepface not installed (Windows local env)
 
 from app.utils import compute_badges
 
-from ..services.storage_service import store_upload, resolve_reference_path
+from ..services.storage_service import store_upload, resolve_reference_path, delete_reference
 import os
 import random
 import string
@@ -500,15 +501,21 @@ def upload_document():
     # ------------------ IMAGE QUALITY CHECKS ------------------
     if not is_pdf:
         if is_blurry(file_path):
+            if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+                delete_reference(stored["storage_ref"])
             return {"error": "Document image too blurry"}, 400
 
         if is_screenshot(file_path):
+            if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+                delete_reference(stored["storage_ref"])
             return {"error": "Screenshots are not allowed"}, 400
 
     # ------------------ OCR ------------------
     text = extract_text(file_path)
 
     if not text or not text.strip():
+        if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+            delete_reference(stored["storage_ref"])
         return {
             "error": "No readable text found. Upload a clear original document."
         }, 400
@@ -518,10 +525,14 @@ def upload_document():
     if doc_type in ["driving license", "driving licence"]:
         normalized_doc_type = "driving"
     if doc_type not in {"aadhaar", "passport", "driving", "driving license", "driving licence", "other"}:
+        if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+            delete_reference(stored["storage_ref"])
         return {"error": "unsupported document type"}, 400
     is_valid = validate_document(text, normalized_doc_type)
 
     if not is_valid:
+        if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+            delete_reference(stored["storage_ref"])
         return {
             "error": "Invalid document image. Upload a clear original document."
         }, 400
@@ -572,7 +583,12 @@ def upload_selfie():
     if not user:
         return {"error": "unauthenticated"}, 401
 
-    if user.verification_status != VerificationStatus.document_verified:
+    if user.verification_status not in {
+        VerificationStatus.document_verified,
+        VerificationStatus.rejected,
+    }:
+        return {"error": "document verification required"}, 400
+    if user.verification_status == VerificationStatus.rejected and not user.document_filename:
         return {"error": "document verification required"}, 400
 
     file = request.files.get("file")
@@ -595,11 +611,13 @@ def upload_selfie():
             extra={"user_id": user.id, "error": str(exc)},
         )
         return {"error": "upload failed"}, 500
-    selfie_path = stored["local_path"]
 
     if FACE_VERIFY_AVAILABLE:
+        selfie_path = stored["local_path"]
         face = extract_face_from_image(selfie_path)
         if face is None:
+            if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+                delete_reference(stored["storage_ref"])
             return {"error": "No clear face detected in selfie"}, 400
 
     # ✅ SAVE SELFIE REFERENCE
@@ -721,11 +739,15 @@ def upload_verification_video():
     video_faces = extract_video_faces(video_path)
 
     if video_faces is None:
+        if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+            delete_reference(stored["storage_ref"])
         return {
             "error": "Video format not supported. Please retake or use a different browser."
         }, 400
 
     if not video_faces:
+        if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+            delete_reference(stored["storage_ref"])
         return {"error": "No face detected in video"}, 400
 
     # --------------------
@@ -738,6 +760,12 @@ def upload_verification_video():
         )
         db.session.commit()
 
+        if not current_app.config.get("KEEP_FAILED_VERIFICATION_MEDIA", False):
+            try:
+                delete_reference(stored["storage_ref"])
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete rejected video file: {e}")
+
         return {"error": "Face does not match reference"}, 400
 
     # --------------------
@@ -745,9 +773,7 @@ def upload_verification_video():
     # --------------------
     user.verification_video_filename = stored["storage_ref"]
     user.verification_status = VerificationStatus.face_verified
-    user.verification_notes = (
-        f"Face verified successfully ({reference_source})"
-    )
+    user.verification_notes = f"Face verified successfully ({reference_source})"
 
     db.session.commit()
 

@@ -95,6 +95,23 @@ def _touch_presence(user_id):
         current_app.logger.debug("chat.presence.redis_unavailable", extra={"user_id": user_id})
 
 
+def _clear_presence(user_id):
+    if user_id is None:
+        return
+
+    with presence_lock:
+        inmemory_presence.pop(user_id, None)
+
+    client = _redis_presence_client()
+    if not client:
+        return
+
+    try:
+        client.delete(_presence_key(user_id))
+    except Exception:
+        current_app.logger.debug("chat.presence.redis_delete_failed", extra={"user_id": user_id})
+
+
 def _presence_map(user_ids):
     ids = [int(user_id) for user_id in {user_id for user_id in user_ids if user_id}]
     if not ids:
@@ -1102,4 +1119,6 @@ def socket_handlers(app):
         user_id = socket_session_users.pop(request.sid, None)
         if not user_id:
             return
+        _clear_presence(user_id)
+        _broadcast_presence_update(user_id)
         current_app.logger.info("chat.socket_disconnected", extra={"sid": request.sid, "user_id": user_id})

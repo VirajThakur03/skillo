@@ -19,3 +19,5 @@ errorlog = "-"
 capture_output = True
 loglevel = os.getenv("LOG_LEVEL", "info").lower()
 preload_app = False
+reload = os.getenv("ENV", "development").strip().lower() == "development"
+

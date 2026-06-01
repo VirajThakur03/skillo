@@ -353,6 +353,13 @@ class User(db.Model):
         cascade="all, delete-orphan",
     )
 
+    reviews_received = db.relationship(
+        "Review",
+        backref="provider",
+        cascade="all, delete-orphan",
+        foreign_keys="Review.provider_id",
+    )
+
     messages = db.relationship(
         "Message",
         back_populates="sender",

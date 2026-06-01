@@ -135,11 +135,9 @@ def test_job_post_flow_create_propose_select_and_cancel(
         assert job.selected_provider_id is None
         assert job.cancel_allowed_until is None
 
-        selected_proposal = JobProposal.query.filter_by(
-            job_post_id=job_id,
-            provider_id=provider_a["id"],
-        ).first()
-        assert selected_proposal.status == JobProposalStatus.ACTIVE
+        proposals = JobProposal.query.filter_by(job_post_id=job_id).all()
+        assert len(proposals) == 2
+        assert all(p.status == JobProposalStatus.ACTIVE for p in proposals)
 
         booking = Booking.query.filter_by(job_post_id=job_id).first()
         assert booking.status == BookingStatus.CANCELLED

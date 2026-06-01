@@ -158,6 +158,104 @@ def _ensure_missing_indexes():
     db.session.commit()
 
 
+def _seed_demo_users_and_provider(app):
+    from .models import User, RoleEnum, Skill, VerificationStatus, KycStatus
+    from .extensions import bcrypt
+    import random
+    import string
+
+    def gen_ref_code():
+        return "SKL" + "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
+
+    # 1. Seeker User
+    seeker_email = "demo.payment.test@example.com"
+    seeker = User.query.filter_by(email=seeker_email).first()
+    if not seeker:
+        seeker = User(
+            name="Demo Seeker",
+            email=seeker_email,
+            role=RoleEnum.SEEKER,
+            is_email_verified=True,
+            wallet_balance=5000.00
+        )
+        seeker.set_password("SkilloPayment123!", bcrypt)
+        while True:
+            code = gen_ref_code()
+            if not User.query.filter_by(referral_code=code).first():
+                seeker.referral_code = code
+                break
+        db.session.add(seeker)
+        app.logger.info("Demo Seeker user created.")
+    else:
+        seeker.is_email_verified = True
+        if seeker.wallet_balance < 5000.00:
+            seeker.wallet_balance = 5000.00
+        app.logger.info("Demo Seeker user already exists, updated wallet/verification status.")
+
+    # 2. Provider User
+    provider_email = "demo.provider.test@example.com"
+    provider = User.query.filter_by(email=provider_email).first()
+    if not provider:
+        provider = User(
+            name="Demo Provider",
+            email=provider_email,
+            role=RoleEnum.PROVIDER,
+            is_email_verified=True,
+            is_verified=True,
+            verification_status=VerificationStatus.completed,
+            kyc_status=KycStatus.approved,
+            is_provider_profile_complete=True,
+            is_accepting_bookings=True
+        )
+        provider.set_password("SkilloPayment123!", bcrypt)
+        while True:
+            code = gen_ref_code()
+            if not User.query.filter_by(referral_code=code).first():
+                provider.referral_code = code
+                break
+        db.session.add(provider)
+        db.session.flush() # flush to get provider ID for skill
+
+        # 3. Create a Skill for Provider
+        skill = Skill(
+            provider_id=provider.id,
+            title="Home Plumbing Services",
+            description="Professional plumbing, pipe repairs, and leak fixes.",
+            price=1500.00,
+            currency="INR",
+            is_active=True
+        )
+        db.session.add(skill)
+        app.logger.info("Demo Provider and Plumbing Skill created.")
+    else:
+        provider.is_email_verified = True
+        provider.is_verified = True
+        provider.verification_status = VerificationStatus.completed
+        provider.kyc_status = KycStatus.approved
+        provider.is_provider_profile_complete = True
+        provider.is_accepting_bookings = True
+        
+        # Check if the provider has a skill
+        skill = Skill.query.filter_by(provider_id=provider.id).first()
+        if not skill:
+            skill = Skill(
+                provider_id=provider.id,
+                title="Home Plumbing Services",
+                description="Professional plumbing, pipe repairs, and leak fixes.",
+                price=1500.00,
+                currency="INR",
+                is_active=True
+            )
+            db.session.add(skill)
+            app.logger.info("Plumbing Skill added for existing Demo Provider.")
+        else:
+            skill.is_active = True
+            skill.price = 1500.00
+            app.logger.info("Demo Provider and Skill status updated.")
+
+    db.session.commit()
+
+
 def ensure_runtime_schema(app):
     if not app.config.get("AUTO_SYNC_SCHEMA", True):
         return
@@ -168,6 +266,8 @@ def ensure_runtime_schema(app):
         db.create_all()
         _ensure_missing_columns()
         _ensure_missing_indexes()
+        
+        _seed_demo_users_and_provider(app)
     except (OperationalError, ProgrammingError) as exc:
         db.session.rollback()
         app.logger.warning("Schema bootstrap skipped: %s", exc)

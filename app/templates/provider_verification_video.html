@@ -23,7 +23,7 @@
     <video id="preview" autoplay playsinline muted style="width:100%; border-radius:12px; background:#0f172a; min-height:280px;"></video>
 
     <div class="actions" style="margin-top:12px; gap:8px; flex-wrap:wrap;">
-      <button class="btn primary" id="recordBtn" type="button">Start recording</button>
+      <button class="btn primary" id="recordBtn" type="button" disabled>Start recording</button>
       <button class="btn ghost" id="retryBtn" type="button" style="display:none;">Retake video</button>
     </div>
 
@@ -82,6 +82,7 @@
     }
 
     await stopStream();
+    setStatus("Requesting camera access...");
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -89,9 +90,30 @@
         audio: true,
       });
       preview.srcObject = stream;
+
+      // Wait for the video to actually start playing
+      await new Promise((resolve) => {
+        preview.onloadedmetadata = () => {
+          preview.play();
+          resolve();
+        };
+        // Safety timeout in case metadata already loaded
+        setTimeout(resolve, 2000);
+      });
+
+      recordBtn.disabled = false;
       return true;
     } catch (error) {
-      setStatus("Camera or microphone permission is required to continue.");
+      const errorName = error.name || "";
+      if (errorName === "NotAllowedError") {
+        setStatus("Camera/microphone permission denied. Please allow access in your browser settings and refresh the page.");
+      } else if (errorName === "NotFoundError") {
+        setStatus("No camera or microphone found. Please connect a camera and refresh.");
+      } else if (errorName === "NotReadableError") {
+        setStatus("Camera is in use by another application. Close other apps using the camera and refresh.");
+      } else {
+        setStatus("Camera error: " + (error.message || "Unknown error") + ". Please check browser permissions.");
+      }
       recordBtn.disabled = true;
       return false;
     }
@@ -149,7 +171,7 @@
       clearInterval(countdownTimer);
       countdownTimer = null;
       if (mediaRecorder && mediaRecorder.state === "recording") {
-        setStatus("Uploading video...");
+        setStatus("Processing video...");
         mediaRecorder.stop();
       }
     }, 1000);
@@ -175,6 +197,8 @@
       setStatus("Video capture failed. Please retake the video.");
       return;
     }
+
+    setStatus("Uploading video...");
 
     const token = localStorage.getItem("sklio_access_token");
     if (!token) {
@@ -213,7 +237,7 @@
         return;
       }
 
-      setStatus("Face verified successfully. Redirecting...");
+      setStatus("Face verified successfully! Redirecting...");
       await stopStream();
       setTimeout(() => {
         window.location.replace("/confirm_location");
@@ -230,9 +254,12 @@
   recordBtn.addEventListener("click", beginRecording);
   retryBtn.addEventListener("click", async () => {
     retryBtn.style.display = "none";
-    recordBtn.disabled = false;
-    setStatus("Ready to record again.");
-    await prepareCamera();
+    recordBtn.disabled = true;
+    setStatus("Preparing camera...");
+    const ready = await prepareCamera();
+    if (ready) {
+      setStatus("Camera ready. Record a clear 5-second video.");
+    }
   });
 
   window.addEventListener("beforeunload", () => {

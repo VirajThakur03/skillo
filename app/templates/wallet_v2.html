@@ -187,12 +187,21 @@ document.getElementById("btnConfirmTopUp").onclick = async () => {
     }
 
     if (res.data?.provider === "mock") {
-        showMkToast("Top-up successful", "success");
-        topUpModal.style.display = "none";
-        btn.disabled = false;
-        btn.textContent = "Pay Now";
-        loadWallet();
-        loadTransactions(1);
+        const payRes = await authFetch(`/api/wallet/v2/topup/${res.data.topup_reference}/pay`, {
+            method: "POST"
+        });
+        if (payRes.ok) {
+            showMkToast("Top-up successful", "success");
+            topUpModal.style.display = "none";
+            btn.disabled = false;
+            btn.textContent = "Pay Now";
+            loadWallet();
+            loadTransactions(1);
+        } else {
+            showMkToast(payRes.data?.error || "Failed to complete mock top-up", "error");
+            btn.disabled = false;
+            btn.textContent = "Pay Now";
+        }
         return;
     }
 

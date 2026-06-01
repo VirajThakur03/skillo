@@ -417,10 +417,11 @@ def cancel_selected_provider(job_id):
     job.provider_found_visible_until = None
     job.cancel_allowed_until = None
     
-    # Update proposals - reset the selected one back to active
-    JobProposal.query.filter_by(job_post_id=job_id, status=JobProposalStatus.SELECTED).update(
-        {JobProposal.status: JobProposalStatus.ACTIVE}
-    )
+    # Reset the selected one and all previously rejected proposals back to ACTIVE
+    JobProposal.query.filter(
+        JobProposal.job_post_id == job_id,
+        JobProposal.status.in_([JobProposalStatus.SELECTED, JobProposalStatus.REJECTED])
+    ).update({JobProposal.status: JobProposalStatus.ACTIVE}, synchronize_session=False)
     
     # Cancel the booking
     booking = Booking.query.filter_by(job_post_id=job_id, status=BookingStatus.PENDING).first()

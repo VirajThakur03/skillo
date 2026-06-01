@@ -251,7 +251,8 @@ def preview_cancellation(booking, actor_user_id=None):
     policy = resolve_change_policy(booking.provider_id)
     now = utcnow()
     delta_hours = max((booking.scheduled_at - now).total_seconds() / 3600.0, 0)
-    price = float(booking.price or 0)
+    promo_discount = float(getattr(booking, "promo_discount_amount", 0) or 0)
+    price = max(float(booking.price or 0) - promo_discount, 0.0)
     fee = 0.0
     goodwill_credit = 0.0
 
