@@ -36,7 +36,7 @@ class BenchmarkConfig:
 def _register(client, name, email, role):
     response = client.post(
         "/api/auth/register",
-        json={"name": name, "email": email, "password": "secret123", "role": role},
+        json={"name": name, "email": email, "password": "secret123", "role": role},  # pragma: allowlist secret
     )
     assert response.status_code == 201, response.get_json()
     return response.get_json()

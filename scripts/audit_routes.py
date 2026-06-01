@@ -50,12 +50,12 @@ def register_and_login(role):
     import random, string
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     email = f"audit_{role}_{suffix}@test.com"
-    payload = {"name": f"Audit {role.title()}", "email": email, "password": "AuditPass123!", "role": role}
+    payload = {"name": f"Audit {role.title()}", "email": email, "password": "AuditPass123!", "role": role}  # pragma: allowlist secret
     code, resp = test_api("/api/auth/register", method="POST", data=payload, label=f"[{role.upper()} REGISTER] ")
     if code == 201 and resp.get("access_token"):
         return resp["access_token"]
     # Try login if already exists
-    code2, resp2 = test_api("/api/auth/login", method="POST", data={"email": email, "password": "AuditPass123!"}, label=f"[{role.upper()} LOGIN] ")
+    code2, resp2 = test_api("/api/auth/login", method="POST", data={"email": email, "password": "AuditPass123!"}, label=f"[{role.upper()} LOGIN] ")  # pragma: allowlist secret
     if code2 == 200 and resp2.get("access_token"):
         return resp2["access_token"]
     return None

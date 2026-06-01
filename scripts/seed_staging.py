@@ -24,7 +24,7 @@ def upsert_user(*, email, defaults):
     user = User.query.filter_by(email=email).first()
     if not user:
         user = User(email=email, **defaults)
-        user.set_password("password123", bcrypt)
+        user.set_password("password123", bcrypt)  # pragma: allowlist secret
         db.session.add(user)
     else:
         for key, value in defaults.items():

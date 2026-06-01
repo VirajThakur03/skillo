@@ -112,7 +112,7 @@ def test_stripe_webhook_marks_booking_confirmed(client, register_user, monkeypat
         lambda payload, signature_header, secret: event,
     )
 
-    client.application.config["STRIPE_WEBHOOK_SECRET"] = "whsec_test"
+    client.application.config["STRIPE_WEBHOOK_SECRET"] = "whsec_test"  # pragma: allowlist secret
 
     response = client.post(
         "/webhooks/stripe",
@@ -165,7 +165,7 @@ def test_stripe_webhook_duplicate_delivery_is_harmless(client, register_user, mo
         "data": {"object": {"id": "pi_dup_123", "latest_charge": "ch_dup_123", "metadata": {"booking_id": str(booking_id)}}},
     }
     monkeypatch.setattr("app.routes.webhooks.construct_webhook_event", lambda payload, signature_header, secret: event)
-    client.application.config["STRIPE_WEBHOOK_SECRET"] = "whsec_test"
+    client.application.config["STRIPE_WEBHOOK_SECRET"] = "whsec_test"  # pragma: allowlist secret
 
     first = client.post("/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "t=1,v1=test"})
     second = client.post("/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "t=1,v1=test"})
@@ -223,7 +223,7 @@ def test_stripe_webhook_marks_payment_failed_and_refunded(client, register_user,
     ]
     iterator = iter(events)
     monkeypatch.setattr("app.routes.webhooks.construct_webhook_event", lambda payload, signature_header, secret: next(iterator))
-    client.application.config["STRIPE_WEBHOOK_SECRET"] = "whsec_test"
+    client.application.config["STRIPE_WEBHOOK_SECRET"] = "whsec_test"  # pragma: allowlist secret
 
     failed = client.post("/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "t=1,v1=test"})
     refunded = client.post("/webhooks/stripe", data=b"{}", headers={"Stripe-Signature": "t=1,v1=test"})

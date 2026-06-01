@@ -85,7 +85,7 @@ def test_validate_runtime_config_requires_stripe_wallet_secrets_in_production(ap
             ALLOW_MOCK_PAYMENTS=False,
             PAYMENT_MODE="real",
             PAYMENT_PROVIDER="stripe",
-            STRIPE_SECRET_KEY="sk_live_test",
+            STRIPE_SECRET_KEY="sk_live_test",  # pragma: allowlist secret
             STRIPE_WEBHOOK_SECRET="",
             STRIPE_API_MODE="live",
             FEATURE_WALLET=True,

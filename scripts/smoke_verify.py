@@ -33,8 +33,8 @@ class SmokeConfig:
     ALLOW_UNSAFE_WERKZEUG = True
     PAYMENT_SUCCESS_URL = "https://example.test/track/{booking_id}"
     PAYMENT_CANCEL_URL = "https://example.test/booking/{skill_id}?provider={provider_id}"
-    STRIPE_SECRET_KEY = "sk_test_123"
-    STRIPE_WEBHOOK_SECRET = "whsec_test"
+    STRIPE_SECRET_KEY = "sk_test_123"  # pragma: allowlist secret
+    STRIPE_WEBHOOK_SECRET = "whsec_test"  # pragma: allowlist secret
 
 
 class FakeStripeResponse:
@@ -60,7 +60,7 @@ def _register(client, name, email, role):
         json={
             "name": name,
             "email": email,
-            "password": "secret123",
+            "password": "secret123",  # pragma: allowlist secret
             "role": role,
         },
     )
@@ -81,7 +81,7 @@ def main():
 
     login = client.post(
         "/api/auth/login",
-        json={"email": "smoke-seeker@example.com", "password": "secret123"},
+        json={"email": "smoke-seeker@example.com", "password": "secret123"},  # pragma: allowlist secret
     )
     assert login.status_code == 200, login.get_json()
     refresh = client.post(
@@ -98,7 +98,7 @@ def main():
     reset_token = reset_request.get_json()["reset_token"]
     reset_confirm = client.post(
         "/api/auth/password-reset/confirm",
-        json={"token": reset_token, "password": "newsecret456"},
+        json={"token": reset_token, "password": "newsecret456"},  # pragma: allowlist secret
     )
     assert reset_confirm.status_code == 200, reset_confirm.get_json()
 

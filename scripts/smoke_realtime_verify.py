@@ -38,7 +38,7 @@ def _register(client, name, email, role):
         json={
             "name": name,
             "email": email,
-            "password": "secret123",
+            "password": "secret123",  # pragma: allowlist secret
             "role": role,
         },
     )
